@@ -1,0 +1,170 @@
+import type { UserProfile } from '../../shared/types';
+
+export interface GenerateAnswerPayload {
+  questionText: string;
+  context?: string;
+  fieldMaxLength?: number;
+  language?: 'zh' | 'en';
+}
+
+export interface MatchFieldsPayload {
+  fields: Array<{
+    index: number;
+    name: string;
+    id: string;
+    placeholder: string;
+    labelText: string;
+    type: string;
+  }>;
+  domain: string;
+}
+
+export function buildAnswerGenerationPrompt(
+  payload: GenerateAnswerPayload,
+  profile: UserProfile
+): { system: string; user: string } {
+  const profileSummary = buildProfileSummary(profile);
+
+  const system = `你是一个求职顾问AI，帮助求职者生成高质量的网申回答。
+要求：
+- 基于候选人的真实背景信息来生成回答
+- 语言风格自然、专业、有说服力
+- 突出候选人的优势和与岗位的匹配度
+- 回答长度适中，不超过字数限制
+- 使用第一人称
+- 如果问题是中文就用中文回答，英文就用英文回答`;
+
+  const user = `候选人背景信息：
+${profileSummary}
+
+应聘上下文：${payload.context || '未知'}
+
+问题：${payload.questionText}
+${payload.fieldMaxLength ? `字数限制：${payload.fieldMaxLength}字以内` : ''}
+
+请生成一段回答：`;
+
+  return { system, user };
+}
+
+export function buildResumeParsingPrompt(rawText: string): { system: string; user: string } {
+  const system = `你是简历解析专家。从给定的简历原文中提取结构化数据，输出严格的JSON格式。
+
+输出格式要求：
+{
+  "personal": {
+    "name": "姓名",
+    "gender": "性别",
+    "birthDate": "出生日期 (YYYY-MM-DD)",
+    "phone": "手机号",
+    "email": "邮箱",
+    "wechat": "微信号",
+    "politicalStatus": "政治面貌",
+    "ethnicity": "民族",
+    "hometown": "籍贯",
+    "currentAddress": "现居地"
+  },
+  "education": [
+    {
+      "school": "学校名称",
+      "major": "专业",
+      "degree": "学历(高中/专科/本科/硕士/博士)",
+      "startDate": "YYYY-MM",
+      "endDate": "YYYY-MM",
+      "gpa": "GPA或绩点",
+      "achievements": "在校获奖或成绩"
+    }
+  ],
+  "experience": [
+    {
+      "company": "公司名称",
+      "position": "职位",
+      "startDate": "YYYY-MM",
+      "endDate": "YYYY-MM",
+      "description": "工作描述",
+      "achievements": "工作成果"
+    }
+  ],
+  "projects": [
+    {
+      "name": "项目名称",
+      "role": "角色",
+      "startDate": "YYYY-MM",
+      "endDate": "YYYY-MM",
+      "description": "项目描述",
+      "achievements": "项目成果",
+      "technologies": "使用技术"
+    }
+  ],
+  "skills": ["技能1", "技能2"]
+}
+
+规则：
+- 只输出JSON，不要其他文字
+- 缺失的字段填空字符串""
+- 日期统一为YYYY-MM格式
+- 教育/工作经历按时间倒序排列`;
+
+  const user = `请解析以下简历：
+
+${rawText}`;
+
+  return { system, user };
+}
+
+export function buildFieldMatchingPrompt(
+  fields: MatchFieldsPayload['fields']
+): { system: string; user: string } {
+  const fieldTypes = [
+    'name', 'gender', 'birthDate', 'phone', 'email', 'wechat', 'idCard',
+    'school', 'major', 'degree', 'gpa', 'graduationDate',
+    'company', 'position', 'startDate', 'endDate', 'description', 'skills',
+  ];
+
+  const system = `你是一个表单字段分类器。给定表单字段的属性信息，判断每个字段属于哪种类型。
+
+可选的字段类型有：${fieldTypes.join(', ')}
+
+如果无法判断，标记为 "unknown"。
+返回JSON格式：{ "字段index": "fieldType", ... }
+只返回JSON，不要其他内容。`;
+
+  const fieldsDescription = fields.map(f =>
+    `[${f.index}] name="${f.name}" id="${f.id}" placeholder="${f.placeholder}" label="${f.labelText}" type="${f.type}"`
+  ).join('\n');
+
+  const user = `请分析以下表单字段：\n${fieldsDescription}`;
+
+  return { system, user };
+}
+
+function buildProfileSummary(profile: UserProfile): string {
+  const parts: string[] = [];
+
+  if (profile.personal.name) parts.push(`姓名：${profile.personal.name}`);
+
+  if (profile.education.length > 0) {
+    const edu = profile.education[0];
+    parts.push(`教育：${edu.school} ${edu.major} ${edu.degree}`);
+  }
+
+  if (profile.experience.length > 0) {
+    parts.push('工作经历：');
+    for (const exp of profile.experience.slice(0, 3)) {
+      parts.push(`- ${exp.company} | ${exp.position} | ${exp.description || ''}`);
+    }
+  }
+
+  if (profile.projects.length > 0) {
+    parts.push('项目经历：');
+    for (const proj of profile.projects.slice(0, 3)) {
+      parts.push(`- ${proj.name} | ${proj.role} | ${proj.description || ''}`);
+    }
+  }
+
+  if (profile.skills.length > 0) {
+    parts.push(`技能：${profile.skills.join(', ')}`);
+  }
+
+  return parts.join('\n');
+}
