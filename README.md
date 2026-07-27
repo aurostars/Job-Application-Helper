@@ -21,7 +21,16 @@
 
 ## 开发指南
 
-### 1. 安装依赖
+### 一键安装依赖并构建（推荐）
+
+项目根目录已提供一键脚本，双击即可完成「安装依赖 + 构建 dist/」：
+
+- macOS：双击运行 `setup.command`
+- Windows：双击运行 `setup.bat`
+
+> 脚本会优先使用 `npm ci`（与 `package-lock.json` 对齐），然后执行 `npm run build`。
+
+### 1. 安装依赖（手动）
 
 ```bash
 npm install
