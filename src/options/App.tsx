@@ -2,6 +2,33 @@ import React, { useState, useEffect } from 'react';
 import { MessageService } from '../shared/message';
 import type { UserProfile, PersonalInfo } from '../shared/types';
 import { AISettings } from './AISettings';
+import { EducationSection } from './EducationSection';
+import { ExperienceSection } from './ExperienceSection';
+
+/** MIME 类型到扩展名的兜底映射，用于文件名缺少扩展名的情况 */
+const MIME_TO_EXT: Record<string, string> = {
+  'application/json': 'json',
+  'application/pdf': 'pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/msword': 'doc',
+  'text/markdown': 'md',
+  'text/plain': 'txt',
+};
+
+/**
+ * 解析上传文件的类型。优先取文件名扩展名；
+ * 文件名无扩展名（或含多个点导致误判）时回退到 MIME 类型。
+ */
+function resolveFileType(file: File): string {
+  const name = file.name.trim();
+  const dotIndex = name.lastIndexOf('.');
+  const ext = dotIndex > 0 ? name.slice(dotIndex + 1).toLowerCase() : '';
+
+  const known = ['pdf', 'doc', 'docx', 'md', 'markdown', 'txt', 'json'];
+  if (known.includes(ext)) return ext;
+
+  return MIME_TO_EXT[file.type] || ext;
+}
 
 function App() {
   const [profile, setProfile] = useState<UserProfile>({
@@ -74,7 +101,7 @@ function App() {
     const reader = new FileReader();
     reader.onload = async (event) => {
       const base64Data = event.target?.result as string;
-      const fileType = file.name.split('.').pop() || '';
+      const fileType = resolveFileType(file);
 
       try {
         const response = await MessageService.sendMessage({
@@ -121,6 +148,24 @@ function App() {
             }}
           >
             基本信息
+          </button>
+          <button
+            onClick={() => setActiveTab('education')}
+            style={{
+              ...styles.tab,
+              ...(activeTab === 'education' && styles.activeTab)
+            }}
+          >
+            教育经历
+          </button>
+          <button
+            onClick={() => setActiveTab('experience')}
+            style={{
+              ...styles.tab,
+              ...(activeTab === 'experience' && styles.activeTab)
+            }}
+          >
+            实习与项目
           </button>
           <button
             onClick={() => setActiveTab('resume')}
@@ -175,10 +220,40 @@ function App() {
                 <div style={styles.formGroup}>
                   <label style={styles.label}>出生日期</label>
                   <input
-                    type="date"
+                    type="text"
                     value={profile.personal.birthDate || ''}
                     onChange={(e) => handlePersonalChange('birthDate', e.target.value)}
                     style={styles.input}
+                    placeholder="如 2002年5月 或 2002-05"
+                  />
+                </div>
+              </div>
+
+              <div style={styles.formRow}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>政治面貌</label>
+                  <select
+                    value={profile.personal.politicalStatus || ''}
+                    onChange={(e) => handlePersonalChange('politicalStatus', e.target.value)}
+                    style={styles.input}
+                  >
+                    <option value="">请选择</option>
+                    <option value="中共党员">中共党员</option>
+                    <option value="中共预备党员">中共预备党员</option>
+                    <option value="共青团员">共青团员</option>
+                    <option value="群众">群众</option>
+                    <option value="民主党派">民主党派</option>
+                  </select>
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>民族</label>
+                  <input
+                    type="text"
+                    value={profile.personal.ethnicity || ''}
+                    onChange={(e) => handlePersonalChange('ethnicity', e.target.value)}
+                    style={styles.input}
+                    placeholder="如 汉族"
                   />
                 </div>
               </div>
@@ -216,9 +291,68 @@ function App() {
                 />
               </div>
 
+              <div style={styles.formRow}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>籍贯</label>
+                  <input
+                    type="text"
+                    value={profile.personal.hometown || ''}
+                    onChange={(e) => handlePersonalChange('hometown', e.target.value)}
+                    style={styles.input}
+                    placeholder="如 河北省石家庄市"
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>现居地</label>
+                  <input
+                    type="text"
+                    value={profile.personal.currentAddress || ''}
+                    onChange={(e) => handlePersonalChange('currentAddress', e.target.value)}
+                    style={styles.input}
+                    placeholder="如 北京市海淀区"
+                  />
+                </div>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>身份证号</label>
+                <input
+                  type="text"
+                  value={profile.personal.idCard || ''}
+                  onChange={(e) => handlePersonalChange('idCard', e.target.value)}
+                  style={styles.input}
+                  placeholder="部分网申需要，可留空"
+                  autoComplete="off"
+                />
+              </div>
+
               <div style={styles.hint}>
                 💡 提示：带 * 的为必填项。你也可以通过上传简历来快速填充这些信息。
+                身份证号仅保存在本地浏览器中，不会上传到任何服务器。
               </div>
+            </div>
+          )}
+
+          {activeTab === 'education' && (
+            <div style={styles.form}>
+              <EducationSection
+                items={profile.education || []}
+                onChange={education => setProfile({ ...profile, education })}
+              />
+            </div>
+          )}
+
+          {activeTab === 'experience' && (
+            <div style={styles.form}>
+              <ExperienceSection
+                experience={profile.experience || []}
+                projects={profile.projects || []}
+                skills={profile.skills || []}
+                onChangeExperience={experience => setProfile({ ...profile, experience })}
+                onChangeProjects={projects => setProfile({ ...profile, projects })}
+                onChangeSkills={skills => setProfile({ ...profile, skills })}
+              />
             </div>
           )}
 
@@ -241,10 +375,10 @@ function App() {
                     <line x1="12" y1="3" x2="12" y2="15"></line>
                   </svg>
                   <p style={styles.uploadText}>点击或拖拽文件到此处上传</p>
-                  <p style={styles.uploadHint}>支持 PDF、DOCX、MD、TXT 格式</p>
+                  <p style={styles.uploadHint}>支持 PDF、DOCX、MD、TXT、JSON 格式</p>
                   <input
                     type="file"
-                    accept=".pdf,.doc,.docx,.md,.txt"
+                    accept=".pdf,.doc,.docx,.md,.txt,.json"
                     onChange={handleFileUpload}
                     style={styles.fileInput}
                   />
@@ -280,11 +414,14 @@ function App() {
           {activeTab === 'ai' && <AISettings />}
         </div>
 
-        <div style={styles.actions}>
-          <button onClick={handleSave} disabled={saving} style={styles.saveButton}>
-            {saving ? '保存中...' : '保存设置'}
-          </button>
-        </div>
+        {/* AI 设置页有自己的保存按钮（保存的是 LLM 配置），此处仅保存个人信息 */}
+        {activeTab !== 'ai' && (
+          <div style={styles.actions}>
+            <button onClick={handleSave} disabled={saving} style={styles.saveButton}>
+              {saving ? '保存中...' : '保存设置'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
