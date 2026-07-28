@@ -25,8 +25,8 @@
 
 项目根目录已提供一键脚本，双击即可完成「安装依赖 + 构建 dist/」：
 
-- macOS：双击运行 `setup.command`
-- Windows：双击运行 `setup.bat`
+- macOS：双击运行 `一键安装依赖.command`
+- Windows：双击运行 `一键安装依赖.bat`
 
 > 脚本会优先使用 `npm ci`（与 `package-lock.json` 对齐），然后执行 `npm run build`。
 
