@@ -85,7 +85,7 @@ export type Message =
   | { type: 'MATCH_FIELDS_LLM'; payload: { fields: Array<{ index: number; name: string; id: string; placeholder: string; labelText: string; type: string }>; domain: string } }
   | { type: 'GET_LLM_CONFIG'; payload?: null }
   | { type: 'SAVE_LLM_CONFIG'; payload: import('../services/llm/types').LLMConfig }
-  | { type: 'TEST_LLM_CONNECTION'; payload?: null };
+  | { type: 'TEST_LLM_CONNECTION'; payload?: import('../services/llm/types').LLMConfig | null };
 
 export interface MessageResponse<T = any> {
   success: boolean;

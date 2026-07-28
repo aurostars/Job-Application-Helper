@@ -15,8 +15,13 @@ export class LLMService {
     return this.callOpenAICompatible(messages);
   }
 
+  /** 去掉用户粘贴地址时常见的结尾斜杠，避免出现 //chat/completions */
+  private trimmedBaseUrl(): string {
+    return this.config.baseUrl.trim().replace(/\/+$/, '');
+  }
+
   private async callOpenAICompatible(messages: ChatMessage[]): Promise<LLMResponse> {
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
+    const response = await fetch(`${this.trimmedBaseUrl()}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -26,18 +31,36 @@ export class LLMService {
         model: this.config.model,
         messages,
         temperature: this.config.temperature ?? 0.7,
-        max_tokens: this.config.maxTokens ?? 2048,
+        max_tokens: this.config.maxTokens ?? 4096,
       }),
     });
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`LLM API error (${response.status}): ${error}`);
+      throw new Error(`LLM API error (${response.status}): ${extractErrorMessage(error)}`);
     }
 
     const data = await response.json();
+
+    // 部分国产平台（如智谱、MiniMax）在 HTTP 200 下用 body 内的错误码报错
+    const inlineError = data.error?.message ?? data.base_resp?.status_msg;
+    if (inlineError && !data.choices?.length) {
+      throw new Error(`LLM API error: ${inlineError}`);
+    }
+
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || content.trim() === '') {
+      // 推理模型（如 mimo-v2.5-pro、deepseek-reasoner）可能因 max_tokens
+      // 在思考阶段就耗尽，导致正文为空
+      const finishReason = data.choices?.[0]?.finish_reason;
+      if (finishReason === 'length') {
+        throw new Error('模型输出被 max_tokens 截断，正文为空。推理模型请调大 max_tokens 或改用非推理模型。');
+      }
+      throw new Error('LLM 返回内容为空，请检查模型名称是否正确');
+    }
+
     return {
-      content: data.choices[0].message.content,
+      content,
       usage: data.usage ? {
         promptTokens: data.usage.prompt_tokens,
         completionTokens: data.usage.completion_tokens,
@@ -51,7 +74,7 @@ export class LLMService {
       .filter(m => m.role !== 'system')
       .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-    const response = await fetch(`${this.config.baseUrl}/messages`, {
+    const response = await fetch(`${this.trimmedBaseUrl()}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -69,7 +92,7 @@ export class LLMService {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Claude API error (${response.status}): ${error}`);
+      throw new Error(`Claude API error (${response.status}): ${extractErrorMessage(error)}`);
     }
 
     const data = await response.json();
@@ -82,12 +105,23 @@ export class LLMService {
     };
   }
 
-  async testConnection(): Promise<boolean> {
-    try {
-      await this.chat([{ role: 'user', content: 'Hi. Reply with just "ok".' }]);
-      return true;
-    } catch {
-      return false;
-    }
+  /** 连通性测试：失败时抛出原始错误，便于界面显示具体原因 */
+  async testConnection(): Promise<void> {
+    await this.chat([{ role: 'user', content: 'Hi. Reply with just "ok".' }]);
+  }
+}
+
+/** 各家平台的错误体格式不一，尽量抽出可读的一句话，否则退回原始文本 */
+function extractErrorMessage(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw);
+    return (
+      parsed.error?.message ??
+      parsed.base_resp?.status_msg ??
+      parsed.message ??
+      raw
+    );
+  } catch {
+    return raw;
   }
 }

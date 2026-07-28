@@ -1,33 +1,72 @@
 import React, { useState, useEffect } from 'react';
 import { MessageService } from '../shared/message';
-import { LLMProvider, PROVIDER_PRESETS } from '../services/llm/types';
+import { LLMProvider, PROVIDER_PRESETS, PROVIDER_ORDER } from '../services/llm/types';
 import type { LLMConfig } from '../services/llm/types';
 
 export function AISettings() {
   const [config, setConfig] = useState<LLMConfig>({
-    provider: LLMProvider.OPENAI,
+    provider: LLMProvider.DEEPSEEK,
     apiKey: '',
-    baseUrl: PROVIDER_PRESETS[LLMProvider.OPENAI].baseUrl,
-    model: '',
+    baseUrl: PROVIDER_PRESETS[LLMProvider.DEEPSEEK].baseUrl,
+    model: PROVIDER_PRESETS[LLMProvider.DEEPSEEK].defaultModel,
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
   const [saved, setSaved] = useState(false);
+  /** 用户是否手动编辑过 API 地址；为 true 时切换服务商不覆盖地址 */
+  const [urlEdited, setUrlEdited] = useState(false);
+  /** 用户是否手动编辑过模型名称；为 true 时切换服务商不覆盖模型 */
+  const [modelEdited, setModelEdited] = useState(false);
 
   useEffect(() => {
     MessageService.sendMessage({ type: 'GET_LLM_CONFIG' }).then(res => {
-      if (res.success && res.data) setConfig(res.data as LLMConfig);
+      if (res.success && res.data) {
+        const stored = res.data as LLMConfig;
+        setConfig(stored);
+        // 已保存的值若不是该服务商的官方默认值，视为自定义并予以保留
+        const storedPreset = PROVIDER_PRESETS[stored.provider];
+        setUrlEdited(stored.baseUrl.trim() !== (storedPreset?.baseUrl ?? '').trim());
+        setModelEdited(stored.model.trim() !== (storedPreset?.defaultModel ?? '').trim());
+      }
     });
   }, []);
 
+  const preset = PROVIDER_PRESETS[config.provider] ?? PROVIDER_PRESETS[LLMProvider.CUSTOM];
+
   const handleProviderChange = (provider: LLMProvider) => {
-    const preset = PROVIDER_PRESETS[provider];
+    const next = PROVIDER_PRESETS[provider];
     setConfig({
       ...config,
       provider,
-      baseUrl: preset.baseUrl,
-      model: '',
+      // 用户手动改过的地址/模型不再覆盖，避免自定义代理与模型被重置
+      baseUrl: urlEdited ? config.baseUrl : next.baseUrl,
+      model: modelEdited ? config.model : next.defaultModel,
     });
+    setTestResult(null);
+    setErrorMsg('');
+  };
+
+  const handleBaseUrlChange = (baseUrl: string) => {
+    setUrlEdited(true);
+    setConfig({ ...config, baseUrl });
+  };
+
+  const handleModelChange = (model: string) => {
+    setModelEdited(true);
+    setConfig({ ...config, model });
+  };
+
+  /** 把地址恢复为当前服务商的官方默认值 */
+  const handleResetBaseUrl = () => {
+    setUrlEdited(false);
+    setConfig({ ...config, baseUrl: preset.baseUrl });
+  };
+
+  /** 把模型恢复为当前服务商的默认模型 */
+  const handleResetModel = () => {
+    setModelEdited(false);
+    setConfig({ ...config, model: preset.defaultModel });
   };
 
   const handleSave = async () => {
@@ -42,8 +81,14 @@ export function AISettings() {
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
-    const res = await MessageService.sendMessage({ type: 'TEST_LLM_CONNECTION' });
+    setErrorMsg('');
+    // 传入当前界面填写的配置，无需先保存即可测试
+    const res = await MessageService.sendMessage({
+      type: 'TEST_LLM_CONNECTION',
+      payload: config,
+    });
     setTestResult(res.success ? 'success' : 'fail');
+    if (!res.success) setErrorMsg(res.error || '连接失败，请检查配置');
     setTesting(false);
   };
 
@@ -61,10 +106,9 @@ export function AISettings() {
           onChange={e => handleProviderChange(e.target.value as LLMProvider)}
           style={styles.input}
         >
-          <option value="openai">OpenAI</option>
-          <option value="claude">Claude (Anthropic)</option>
-          <option value="deepseek">DeepSeek</option>
-          <option value="qwen">通义千问 (Qwen)</option>
+          {PROVIDER_ORDER.map(p => (
+            <option key={p} value={p}>{PROVIDER_PRESETS[p].label}</option>
+          ))}
         </select>
       </div>
 
@@ -77,6 +121,16 @@ export function AISettings() {
           style={styles.input}
           placeholder="sk-..."
         />
+        {preset.consoleUrl && (
+          <a
+            href={preset.consoleUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={styles.hintLink}
+          >
+            前往 {preset.label} 控制台获取 API Key →
+          </a>
+        )}
       </div>
 
       <div style={styles.formGroup}>
@@ -84,9 +138,18 @@ export function AISettings() {
         <input
           type="url"
           value={config.baseUrl}
-          onChange={e => setConfig({ ...config, baseUrl: e.target.value })}
+          onChange={e => handleBaseUrlChange(e.target.value)}
           style={styles.input}
+          placeholder="https://api.example.com/v1"
         />
+        {urlEdited && preset.baseUrl && config.baseUrl.trim() !== preset.baseUrl && (
+          <p style={styles.hint}>
+            已使用自定义地址，切换服务商时不会被覆盖。
+            <button onClick={handleResetBaseUrl} style={styles.linkButton}>
+              恢复 {preset.label} 默认地址
+            </button>
+          </p>
+        )}
       </div>
 
       <div style={styles.formGroup}>
@@ -94,10 +157,26 @@ export function AISettings() {
         <input
           type="text"
           value={config.model}
-          onChange={e => setConfig({ ...config, model: e.target.value })}
+          onChange={e => handleModelChange(e.target.value)}
           style={styles.input}
-          placeholder="例如：gpt-4o-mini, deepseek-chat, claude-sonnet-4-20250514"
+          list="model-suggestions"
+          placeholder={preset.defaultModel || '例如：gpt-4o-mini'}
         />
+        <datalist id="model-suggestions">
+          {preset.models.map(m => <option key={m} value={m} />)}
+        </datalist>
+        {modelEdited && preset.defaultModel && config.model.trim() !== preset.defaultModel ? (
+          <p style={styles.hint}>
+            已使用自定义模型，切换服务商时不会被覆盖。
+            <button onClick={handleResetModel} style={styles.linkButton}>
+              恢复 {preset.defaultModel}
+            </button>
+          </p>
+        ) : preset.models.length > 0 && (
+          <p style={styles.hint}>
+            常用模型：{preset.models.join('、')}。模型更新较快，如提示模型不存在请到官方文档核对名称。
+          </p>
+        )}
       </div>
 
       <div style={styles.buttonRow}>
@@ -112,8 +191,14 @@ export function AISettings() {
           {testing ? '测试中...' : '测试连接'}
         </button>
         {testResult === 'success' && <span style={styles.success}>连接成功</span>}
-        {testResult === 'fail' && <span style={styles.fail}>连接失败，请检查配置</span>}
       </div>
+
+      {testResult === 'fail' && (
+        <div style={styles.errorBox}>
+          <strong>连接失败</strong>
+          <p style={styles.errorText}>{errorMsg}</p>
+        </div>
+      )}
 
       <div style={styles.buttonRow}>
         <button onClick={handleSave} style={styles.saveButton}>
@@ -162,6 +247,46 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '12px',
     marginBottom: '16px',
+  },
+  hint: {
+    margin: '6px 0 0 0',
+    fontSize: '12px',
+    color: '#888',
+    lineHeight: 1.5,
+  },
+  errorBox: {
+    padding: '12px 14px',
+    marginBottom: '16px',
+    border: '1px solid #fecaca',
+    borderRadius: '6px',
+    backgroundColor: '#fef2f2',
+    color: '#b91c1c',
+    fontSize: '13px',
+  },
+  errorText: {
+    margin: '6px 0 0 0',
+    fontSize: '12px',
+    lineHeight: 1.6,
+    wordBreak: 'break-all',
+    fontFamily: 'ui-monospace, monospace',
+  },
+  hintLink: {
+    display: 'inline-block',
+    marginTop: '6px',
+    fontSize: '12px',
+    color: '#667eea',
+    textDecoration: 'none',
+  },
+  linkButton: {
+    marginLeft: '6px',
+    padding: 0,
+    border: 'none',
+    background: 'none',
+    color: '#667eea',
+    fontSize: '12px',
+    cursor: 'pointer',
+    textDecoration: 'underline',
+    fontFamily: 'inherit',
   },
   testButton: {
     padding: '10px 20px',
