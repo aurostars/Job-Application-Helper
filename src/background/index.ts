@@ -1,6 +1,6 @@
 import type { Message, MessageResponse, UserProfile, ParsedResumeData } from '../shared/types';
 import { StorageService } from '../shared/storage';
-import { parseResume } from '../parsers';
+import { parseResume, isStructuredType, parseStructuredResume } from '../parsers';
 import { NLPHelper } from '../utils/nlpHelper';
 import { LLMService } from '../services/llm/llmService';
 import { buildAnswerGenerationPrompt, buildResumeParsingPrompt, buildFieldMatchingPrompt } from '../services/llm/prompts';
@@ -67,7 +67,7 @@ async function handleMessage(
       return await handleSaveLLMConfig(message.payload);
 
     case 'TEST_LLM_CONNECTION':
-      return await handleTestConnection();
+      return await handleTestConnection(message.payload);
 
     default:
       return {
@@ -122,16 +122,21 @@ async function handleParseResume(
 
     let parsedData: ParsedResumeData;
 
-    const llmConfig = await StorageService.getLLMConfig();
-    if (llmConfig?.apiKey) {
-      try {
-        parsedData = await parseResumeWithLLM(rawText, llmConfig);
-      } catch (error) {
-        console.warn('LLM resume parsing failed, falling back to regex:', error);
+    if (isStructuredType(fileType)) {
+      // JSON 简历本身已结构化，直接映射，避免 LLM 二次推断带来的误差
+      parsedData = parseStructuredResume(rawText);
+    } else {
+      const llmConfig = await StorageService.getLLMConfig();
+      if (llmConfig?.apiKey) {
+        try {
+          parsedData = await parseResumeWithLLM(rawText, llmConfig);
+        } catch (error) {
+          console.warn('LLM resume parsing failed, falling back to regex:', error);
+          parsedData = NLPHelper.parseResumeText(rawText);
+        }
+      } else {
         parsedData = NLPHelper.parseResumeText(rawText);
       }
-    } else {
-      parsedData = NLPHelper.parseResumeText(rawText);
     }
 
     const currentProfile = await StorageService.getUserProfile();
@@ -143,7 +148,7 @@ async function handleParseResume(
       } as any,
       education: (parsedData.education || currentProfile?.education || []) as any,
       experience: (parsedData.experience || currentProfile?.experience || []) as any,
-      projects: currentProfile?.projects || [],
+      projects: (parsedData.projects || currentProfile?.projects || []) as any,
       skills: parsedData.skills || currentProfile?.skills || [],
       certifications: currentProfile?.certifications || [],
       resume: {
@@ -329,16 +334,23 @@ async function handleSaveLLMConfig(config: LLMConfig): Promise<MessageResponse> 
 }
 
 // 测试 LLM 连接
-async function handleTestConnection(): Promise<MessageResponse> {
+// payload 为界面上当前填写的配置；缺省时回退到已保存的配置
+async function handleTestConnection(payload?: LLMConfig | null): Promise<MessageResponse> {
   try {
-    const config = await StorageService.getLLMConfig();
-    if (!config?.apiKey) {
-      return { success: false, error: '请先配置API Key' };
+    const config = payload ?? await StorageService.getLLMConfig();
+    if (!config?.apiKey?.trim()) {
+      return { success: false, error: '请先填写 API Key' };
+    }
+    if (!config.baseUrl?.trim()) {
+      return { success: false, error: '请先填写 API 地址' };
+    }
+    if (!config.model?.trim()) {
+      return { success: false, error: '请先填写模型名称' };
     }
 
     const llm = new LLMService(config);
-    const ok = await llm.testConnection();
-    return { success: ok, error: ok ? undefined : '连接失败，请检查配置' };
+    await llm.testConnection();
+    return { success: true };
   } catch (error) {
     return {
       success: false,

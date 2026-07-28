@@ -95,14 +95,64 @@ export class NLPHelper {
 
     const skills: string[] = [];
 
+    // 技能名可能含正则元字符（如 C++、Node.js），需转义后再匹配
+    const lowerText = text.toLowerCase();
     for (const skill of commonSkills) {
-      const regex = new RegExp(skill, 'gi');
-      if (regex.test(text)) {
+      if (lowerText.includes(skill.toLowerCase())) {
         skills.push(skill);
       }
     }
 
     return [...new Set(skills)];
+  }
+
+  /**
+   * 提取「标签: 值」形式的个人字段。
+   * 兼容中英文冒号、Markdown 列表符号，以及「状态」这类
+   * 简历编辑器用来存放政治面貌的字段名。
+   */
+  static extractLabeledFields(text: string): Partial<PersonalInfo> {
+    const result: Partial<PersonalInfo> = {};
+
+    // 标签别名 -> PersonalInfo 字段
+    const labelMap: Array<[RegExp, keyof PersonalInfo]> = [
+      [/(?:政治面貌|政治状态|党派|状态)/, 'politicalStatus'],
+      [/(?:出生日期|出生年月|生日|生年月日)/, 'birthDate'],
+      [/(?:性别)/, 'gender'],
+      [/(?:民族)/, 'ethnicity'],
+      [/(?:籍贯|户籍|户口所在地)/, 'hometown'],
+      [/(?:现居地|现居住地|所在地|居住地|现住址)/, 'currentAddress'],
+      [/(?:微信|微信号|WeChat)/i, 'wechat'],
+      [/(?:身份证号?码?|身份证)/, 'idCard'],
+      [/(?:姓名|名字)/, 'name'],
+    ];
+
+    for (const rawLine of text.split('\n')) {
+      // 去掉 Markdown 列表符号与多余空白
+      const line = rawLine.replace(/^[\s\-*•]+/, '').trim();
+      if (!line) continue;
+
+      const match = line.match(/^([^:：]{1,10})[:：]\s*(.+)$/);
+      if (!match) continue;
+
+      const label = match[1].trim();
+      const value = match[2].trim();
+      if (!value || value.length > 60) continue;
+
+      for (const [pattern, field] of labelMap) {
+        if (pattern.test(label) && !result[field]) {
+          // 「状态」只在值确实是政治面貌时才采纳，避免误收「在职」等
+          if (field === 'politicalStatus' && /^状态$/.test(label)
+              && !/(党员|团员|群众|民主党派)/.test(value)) {
+            break;
+          }
+          result[field] = value;
+          break;
+        }
+      }
+    }
+
+    return result;
   }
 
   // 从简历文本中提取结构化数据
@@ -123,13 +173,35 @@ export class NLPHelper {
       personal.email = emails[0];
     }
 
-    // 尝试提取姓名（通常在简历开头）
-    const lines = text.split('\n').filter(line => line.trim().length > 0);
-    if (lines.length > 0) {
-      const firstLine = lines[0].trim();
-      // 如果第一行很短（2-4个字符）且不包含其他信息，可能是姓名
-      if (firstLine.length >= 2 && firstLine.length <= 10 && !phones.includes(firstLine) && !emails.includes(firstLine)) {
-        personal.name = firstLine;
+    // 提取「标签: 值」形式的字段（简历常见写法，如「生日: 2002年5月」）
+    Object.assign(personal, this.extractLabeledFields(text));
+
+    // 尝试提取姓名。标签式（姓名: xxx）已在上一步处理，此处按位置推断。
+    if (!personal.name) {
+      const lines = text.split('\n')
+        .map(l => l.replace(/^#+\s*/, '').trim())
+        .filter(l => l.length > 0);
+
+      // 文档标题常为「XXX的个人简历」，可从中反推姓名
+      for (const line of lines.slice(0, 8)) {
+        const titleMatch = line.match(/^(.{2,4})的(?:个人)?简历/);
+        if (titleMatch) {
+          personal.name = titleMatch[1];
+          break;
+        }
+      }
+
+      // 否则取靠前的一个短行（排除章节标题与联系方式）
+      if (!personal.name) {
+        const sectionWords = /(简历|基本信息|教育|实习|工作|经历|技能|项目|评价|校园|获奖)/;
+        for (const line of lines.slice(0, 8)) {
+          if (line.length >= 2 && line.length <= 6
+              && !sectionWords.test(line)
+              && !/[:：@\d]/.test(line)) {
+            personal.name = line;
+            break;
+          }
+        }
       }
     }
 
