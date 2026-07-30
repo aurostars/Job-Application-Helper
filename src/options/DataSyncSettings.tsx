@@ -34,6 +34,7 @@ function Summary({ summary }: { summary: BackupSummary }) {
       <div><dt>个人信息</dt><dd>{summary.hasUserProfile ? '包含' : '不包含'}</dd></div>
       <div><dt>简历原文件</dt><dd>{summary.hasResumeFile ? '包含' : '不包含'}</dd></div>
       <div><dt>AI 配置 / API Key</dt><dd>{summary.hasLLMConfig ? (summary.hasApiKey ? '包含（含 Key）' : '包含') : '不包含'}</dd></div>
+      <div><dt>WebDAV 同步设置</dt><dd>{summary.hasWebDAVConfig ? '包含（含密码，导入后覆盖）' : '不包含'}</dd></div>
     </dl>
   );
 }
@@ -215,7 +216,7 @@ export function DataSyncSettings({ onDataChanged }: Props) {
         </div>
 
         <div className="sensitive-warning" role="note">
-          备份为明文 JSON，包含完整个人信息、简历原文件和 AI API Key。请妥善保管，不要发送给他人。
+          备份为明文 JSON，包含完整个人信息、简历原文件、AI API Key 和 WebDAV 账号密码。请妥善保管，不要发送给他人。
         </div>
 
         {importSummary && (

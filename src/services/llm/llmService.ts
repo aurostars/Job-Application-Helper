@@ -20,6 +20,14 @@ export class LLMService {
     return this.config.baseUrl.trim().replace(/\/+$/, '');
   }
 
+  /**
+   * Claude 的端点固定为 {base}/v1/messages。用户和旧配置里常把 /v1 写进 baseUrl，
+   * 这里统一剥掉，避免拼成 /v1/v1/messages。
+   */
+  private claudeBaseUrl(): string {
+    return this.trimmedBaseUrl().replace(/\/v1$/, '');
+  }
+
   private async callOpenAICompatible(messages: ChatMessage[], signal?: AbortSignal): Promise<LLMResponse> {
     const response = await fetch(`${this.trimmedBaseUrl()}/chat/completions`, {
       method: 'POST',
@@ -75,12 +83,14 @@ export class LLMService {
       .filter(m => m.role !== 'system')
       .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-    const response = await fetch(`${this.trimmedBaseUrl()}/messages`, {
+    const response = await fetch(`${this.claudeBaseUrl()}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': this.config.apiKey,
         'anthropic-version': '2023-06-01',
+        // 官方 API 默认拒绝浏览器发起的请求，扩展环境需显式声明
+        'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
         model: this.config.model,
@@ -97,9 +107,26 @@ export class LLMService {
       throw new Error(`Claude API error (${response.status}): ${extractErrorMessage(error)}`);
     }
 
-    const data = await response.json();
+    // 中转站地址填错时常返回 200 + 网站 HTML，这里给出可定位的提示而非 JSON 解析错误
+    const raw = await response.text();
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error(
+        `Claude API 返回的不是 JSON，请检查 Base URL 是否正确（当前请求 ${this.claudeBaseUrl()}/v1/messages）。响应开头：${raw.slice(0, 80)}`,
+      );
+    }
+
+    const content = data.content?.[0]?.text;
+    if (typeof content !== 'string' || content.trim() === '') {
+      throw new Error(
+        `Claude 返回内容为空或格式异常，请检查模型名称是否正确。${extractErrorMessage(raw)}`,
+      );
+    }
+
     return {
-      content: data.content[0].text,
+      content,
       usage: data.usage ? {
         promptTokens: data.usage.input_tokens,
         completionTokens: data.usage.output_tokens,

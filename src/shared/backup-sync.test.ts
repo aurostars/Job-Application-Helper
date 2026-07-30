@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createBackupDocument,
+  createBackupSummary,
   MAX_BACKUP_BYTES,
   parseAndValidateBackup,
   serializeBackup,
 } from './backup.ts';
+import { StorageService } from './storage.ts';
 import {
   decideSyncAction,
   performSync,
@@ -471,6 +473,102 @@ test('仅远端变化时下载并替换本地业务数据', async () => {
     assert.equal(metadata.status, 'synced');
     assert.equal(metadata.etag, '"v2"');
     assert.equal(metadata.lastSyncedHash, await sha256BusinessData(remoteData));
+  } finally {
+    globalThis.fetch = originalFetch;
+    mock.restore();
+  }
+});
+
+test('本地导出包含 WebDAV 设置且往返不丢字段', () => {
+  const json = serializeBackup(createBackupDocument(
+    completeData,
+    '1.0.0',
+    '2026-01-01T00:00:00.000Z',
+    webdavConfig,
+  ));
+  const parsed = parseAndValidateBackup(json);
+  assert.ok(parsed.success);
+  assert.deepEqual(parsed.document.webdavConfig, webdavConfig);
+  assert.equal(createBackupSummary(parsed.document).hasWebDAVConfig, true);
+});
+
+test('同步上传的文档不带 WebDAV 凭据', () => {
+  const document = createBackupDocument(completeData, '1.0.0', '2026-01-01T00:00:00.000Z');
+  assert.equal('webdavConfig' in document, false);
+  assert.equal(serializeBackup(document).includes('pass'), false);
+  assert.equal(createBackupSummary(document).hasWebDAVConfig, false);
+});
+
+test('WebDAV 设置不参与业务数据 hash', async () => {
+  const withConfig = createBackupDocument(completeData, '1.0.0', '2026-01-01T00:00:00.000Z', webdavConfig);
+  const without = createBackupDocument(completeData, '1.0.0', '2026-01-01T00:00:00.000Z');
+  assert.equal(
+    await sha256BusinessData(withConfig.data),
+    await sha256BusinessData(without.data),
+  );
+});
+
+test('拒绝结构无效的 WebDAV 设置', () => {
+  const json = serializeBackup(createBackupDocument(
+    completeData,
+    '1.0.0',
+    '2026-01-01T00:00:00.000Z',
+    { enabled: 'yes', serverUrl: 'https://dav.example.com/', username: 'u', password: 'p' } as never,
+  ));
+  const parsed = parseAndValidateBackup(json);
+  assert.equal(parsed.success, false);
+  if (!parsed.success) assert.equal(parsed.error.code, 'INVALID_WEBDAV_CONFIG');
+});
+
+test('导入带 WebDAV 设置的备份会覆盖本地凭据', async () => {
+  const mock = installChromeStorageMock({ webdavConfig: { ...webdavConfig, password: 'old' } });
+  try {
+    await StorageService.replaceBusinessData(completeData, webdavConfig);
+    assert.deepEqual(mock.values.webdavConfig, webdavConfig);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('旧备份缺少 WebDAV 字段时保留本地凭据', async () => {
+  const mock = installChromeStorageMock({ webdavConfig });
+  try {
+    const parsed = parseAndValidateBackup(serializeBackup(
+      createBackupDocument(completeData, '1.0.0', '2026-01-01T00:00:00.000Z'),
+    ));
+    assert.ok(parsed.success);
+    await StorageService.replaceBusinessData(parsed.document.data, parsed.document.webdavConfig);
+    assert.deepEqual(mock.values.webdavConfig, webdavConfig);
+  } finally {
+    mock.restore();
+  }
+});
+
+test('同步下载不会覆盖本地 WebDAV 凭据', async () => {
+  const baseHash = await sha256BusinessData(completeData);
+  const remoteData: BackupData = { ...completeData, settings: { locale: 'en-US' } };
+  const remoteJson = serializeBackup(createBackupDocument(
+    remoteData,
+    '1.0.0',
+    '2026-02-01T00:00:00.000Z',
+    { ...webdavConfig, password: 'remote-password' },
+  ));
+  const mock = installChromeStorageMock({
+    userProfile: completeData.userProfile,
+    llmConfig: completeData.llmConfig,
+    settings: completeData.settings,
+    webdavConfig,
+    syncMetadata: { status: 'synced', lastSyncedHash: baseHash, etag: '"v1"' },
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(remoteJson, {
+    status: 200,
+    headers: { ETag: '"v2"' },
+  });
+  try {
+    assert.equal(await performSync('test-webdav-not-overwritten'), 'synced');
+    assert.deepEqual(mock.values.settings, remoteData.settings);
+    assert.deepEqual(mock.values.webdavConfig, webdavConfig);
   } finally {
     globalThis.fetch = originalFetch;
     mock.restore();

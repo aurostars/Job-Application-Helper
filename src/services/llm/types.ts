@@ -40,7 +40,7 @@ export const PROVIDER_PRESETS: Record<LLMProvider, {
   },
   [LLMProvider.CLAUDE]: {
     label: 'Claude',
-    baseUrl: 'https://api.anthropic.com/v1',
+    baseUrl: 'https://api.anthropic.com',
     defaultModel: 'claude-sonnet-4-5',
     models: ['claude-sonnet-4-5', 'claude-opus-4-5', 'claude-haiku-4-5'],
     consoleUrl: 'https://console.anthropic.com/settings/keys',

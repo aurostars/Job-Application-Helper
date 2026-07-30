@@ -26,7 +26,7 @@ echo "node: $(node -v)"
 echo "npm:  $(npm -v)"
 echo
 
-if ! node -e "const [a,b]=process.versions.node.split('.').map(Number); process.exit(a>22 || (a===22&&b>=12) || (a===20&&b>=19) ? 0 : 1)"; then
+if ! node -e "const [a,b]=process.versions.node.split('.').map(Number); process.exit(a>=23 || (a===22&&b>=12) || a===21 || (a===20&&b>=19) ? 0 : 1)"; then
   echo "[错误] 当前 Node.js 版本不满足要求。"
   echo "请安装 Node.js 20.19+ 或 22.12+，推荐使用最新 LTS 版本。"
   echo "下载: https://nodejs.org/"

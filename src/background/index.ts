@@ -540,8 +540,16 @@ function backupFilename(date = new Date()): string {
 }
 
 async function handleExportBackup(): Promise<MessageResponse> {
-  const data = await StorageService.getBackupData();
-  const document = createBackupDocument(data, chrome.runtime.getManifest().version);
+  const [data, webdavConfig] = await Promise.all([
+    StorageService.getBackupData(),
+    StorageService.getWebDAVConfig(),
+  ]);
+  const document = createBackupDocument(
+    data,
+    chrome.runtime.getManifest().version,
+    undefined,
+    webdavConfig,
+  );
   return {
     success: true,
     data: {
@@ -564,7 +572,8 @@ async function handleImportBackup(json: string): Promise<MessageResponse> {
   if (!parsed.success) {
     return { success: false, error: `${parsed.error.code}: ${parsed.error.message}` };
   }
-  await StorageService.replaceBusinessData(parsed.document.data);
+  // 备份里带 WebDAV 设置时一并恢复；旧备份没有该字段则保留当前配置。
+  await StorageService.replaceBusinessData(parsed.document.data, parsed.document.webdavConfig);
   const sync = await queueAutoSync('backup-import');
   return {
     success: true,

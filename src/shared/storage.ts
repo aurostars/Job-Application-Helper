@@ -156,7 +156,7 @@ export class StorageService {
     };
   }
 
-  static async replaceBusinessData(data: BackupData): Promise<void> {
+  static async replaceBusinessData(data: BackupData, webdavConfig?: WebDAVConfig | null): Promise<void> {
     const values: Record<string, unknown> = {};
     const removals: string[] = [];
     const entries = [
@@ -169,6 +169,13 @@ export class StorageService {
       if (value === null) removals.push(key);
       else values[key] = value;
     }
+
+    // webdavConfig 仅在本地导入时恢复，同步下载不会覆盖本地凭据。
+    if (webdavConfig !== undefined) {
+      if (webdavConfig === null) removals.push(STORAGE_KEYS.WEBDAV_CONFIG);
+      else values[STORAGE_KEYS.WEBDAV_CONFIG] = webdavConfig;
+    }
+
     if (Object.keys(values).length > 0) await chrome.storage.local.set(values);
     if (removals.length > 0) await chrome.storage.local.remove(removals);
   }

@@ -27,7 +27,7 @@ echo npm:
 npm -v
 echo.
 
-node -e "const [a,b]=process.versions.node.split('.').map(Number); process.exit(a>22 || (a===22&&b>=12) || (a===20&&b>=19) ? 0 : 1)"
+node -e "const [a,b]=process.versions.node.split('.').map(Number); process.exit(a>=23 || (a===22&&b>=12) || a===21 || (a===20&&b>=19) ? 0 : 1)"
 if errorlevel 1 (
   echo [错误] 当前 Node.js 版本不满足要求。
   echo 请安装 Node.js 20.19+ 或 22.12+，推荐使用最新 LTS 版本。
@@ -38,10 +38,10 @@ if errorlevel 1 (
 
 if exist package-lock.json (
   echo == 安装依赖: npm ci ==
-  npm ci
+  call npm ci
 ) else (
   echo == 安装依赖: npm install ^(未找到 package-lock.json^) ==
-  npm install
+  call npm install
 )
 
 if errorlevel 1 (
@@ -53,7 +53,7 @@ if errorlevel 1 (
 
 echo.
 echo == 运行测试: npm test ==
-npm test
+call npm test
 
 if errorlevel 1 (
   echo.
@@ -64,7 +64,7 @@ if errorlevel 1 (
 
 echo.
 echo == 构建: npm run build ==
-npm run build
+call npm run build
 
 if errorlevel 1 (
   echo.

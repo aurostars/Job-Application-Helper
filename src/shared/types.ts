@@ -98,6 +98,7 @@ export interface BackupDocumentV1 {
     extensionVersion: string;
   };
   data: BackupData;
+  webdavConfig?: WebDAVConfig | null;
 }
 
 export type BackupDocument = BackupDocumentV1;
@@ -115,7 +116,8 @@ export type BackupErrorCode =
   | 'INVALID_DATA'
   | 'INVALID_USER_PROFILE'
   | 'INVALID_LLM_CONFIG'
-  | 'INVALID_SETTINGS';
+  | 'INVALID_SETTINGS'
+  | 'INVALID_WEBDAV_CONFIG';
 
 export interface BackupParseError {
   code: BackupErrorCode;
@@ -134,6 +136,7 @@ export interface BackupSummary {
   hasResumeFile: boolean;
   hasLLMConfig: boolean;
   hasApiKey: boolean;
+  hasWebDAVConfig: boolean;
 }
 
 export interface WebDAVConfig {
