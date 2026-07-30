@@ -47,11 +47,13 @@ export class FormDetector {
   private analyzeElement(
     element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
   ): void {
+    const isCombobox = element.getAttribute('role') === 'combobox';
+
     // 跳过不可见或禁用的元素
     if (
       element.offsetParent === null ||
       element.disabled ||
-      ('readOnly' in element && element.readOnly)
+      ('readOnly' in element && element.readOnly && !isCombobox)
     ) {
       return;
     }

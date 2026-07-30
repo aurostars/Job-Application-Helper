@@ -65,6 +65,13 @@ export function parseResumeJSON(jsonText: string): ParsedResumeData {
     phone: basic.phone || '',
     email: basic.email || '',
     currentAddress: basic.location || '',
+    selfEvaluation: stripHtml(
+      basic.selfEvaluation ||
+      basic.summary ||
+      data.selfEvaluation ||
+      data.selfEvaluationContent ||
+      ''
+    ),
   };
 
   // employementStatus 在该编辑器中常被用来填政治面貌
@@ -89,12 +96,13 @@ export function parseResumeJSON(jsonText: string): ParsedResumeData {
     .map((e: any) => ({
       id: e.id || crypto.randomUUID(),
       school: e.school || '',
+      college: e.college || e.department || '',
+      educationType: e.educationType || e.studyType || '',
       major: e.major || '',
       degree: e.degree || '',
       startDate: e.startDate || '',
       endDate: e.endDate || '',
       gpa: e.gpa || '',
-      achievements: stripHtml(e.description || ''),
     }));
 
   const experience = (data.experience ?? [])
@@ -151,7 +159,7 @@ function parseSkills(skillContent: string): string[] {
 
   const lines = text
     .split('\n')
-    .map(l => l.replace(/^[•\-\*\s]+/, '').trim())
+    .map(l => l.replace(/^[•\-*\s]+/, '').trim())
     .filter(Boolean);
 
   return lines
@@ -187,7 +195,6 @@ function buildRawText(
     for (const e of education) {
       lines.push(`${e.startDate} - ${e.endDate} ${e.school} ${e.major} ${e.degree}`.trim());
       if (e.gpa) lines.push(`GPA：${e.gpa}`);
-      if (e.achievements) lines.push(e.achievements);
     }
   }
 
@@ -211,7 +218,7 @@ function buildRawText(
     lines.push('', '【技能】', skills.join('、'));
   }
 
-  const selfEval = stripHtml(data.selfEvaluationContent || '');
+  const selfEval = personal.selfEvaluation || stripHtml(data.selfEvaluationContent || '');
   if (selfEval) lines.push('', '【自我评价】', selfEval);
 
   return lines.filter(l => l !== undefined).join('\n').trim();

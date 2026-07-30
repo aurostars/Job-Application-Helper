@@ -19,6 +19,21 @@ export interface MatchFieldsPayload {
   domain: string;
 }
 
+export interface AIFillSectionPayload {
+  requestId: string;
+  section: string;
+  fields: Array<{
+    index: number;
+    rowIndex: number;
+    name: string;
+    label: string;
+    type: string;
+    options: string[];
+    context: string;
+  }>;
+  domain: string;
+}
+
 export function buildAnswerGenerationPrompt(
   payload: GenerateAnswerPayload,
   profile: UserProfile
@@ -62,17 +77,19 @@ export function buildResumeParsingPrompt(rawText: string): { system: string; use
     "politicalStatus": "政治面貌",
     "ethnicity": "民族",
     "hometown": "籍贯",
-    "currentAddress": "现居地"
+    "currentAddress": "现居地",
+    "selfEvaluation": "自我评价/个人总结"
   },
   "education": [
     {
       "school": "学校名称",
+      "college": "学院/院系",
+      "educationType": "学历类型/学习形式（如统招全日制、统招非全日制、海外及港澳台、自考、其他）",
       "major": "专业",
       "degree": "学历(高中/专科/本科/硕士/博士)",
       "startDate": "YYYY-MM",
       "endDate": "YYYY-MM",
-      "gpa": "GPA或绩点",
-      "achievements": "在校获奖或成绩"
+      "gpa": "GPA或绩点"
     }
   ],
   "experience": [
@@ -117,7 +134,7 @@ export function buildFieldMatchingPrompt(
 ): { system: string; user: string } {
   const fieldTypes = [
     'name', 'gender', 'birthDate', 'phone', 'email', 'wechat', 'idCard',
-    'school', 'major', 'degree', 'gpa', 'graduationDate',
+    'selfEvaluation', 'school', 'college', 'educationType', 'major', 'degree', 'gpa', 'educationStartDate', 'graduationDate',
     'company', 'position', 'startDate', 'endDate', 'description', 'skills',
   ];
 
@@ -138,10 +155,41 @@ export function buildFieldMatchingPrompt(
   return { system, user };
 }
 
+export function buildSectionFillPrompt(
+  payload: AIFillSectionPayload,
+  profile: UserProfile
+): { system: string; user: string } {
+  const system = `你是网申表单补填助手。根据候选人已有资料，为当前模块仍为空的字段选择对应值。
+
+严格规则：
+- 只能使用候选人资料中明确存在的信息，不得编造学校、公司、日期、证件、成绩或经历
+- rowIndex 从 0 开始，教育/实习/项目字段必须优先匹配资料中相同序号的记录
+- 如果字段提供 options，返回值必须与其中一个选项完全一致
+- 无法确定时返回空字符串
+- 日期使用 YYYY-MM
+- 只返回严格 JSON，格式为 {"字段index": "值"}，不要解释、不要 Markdown`;
+
+  const user = `网站：${payload.domain}
+模块：${payload.section}
+
+候选人已有资料：
+${JSON.stringify(profile, null, 2)}
+
+待补填字段：
+${JSON.stringify(payload.fields, null, 2)}
+
+请返回字段 index 到填写值的 JSON 映射。`;
+
+  return { system, user };
+}
+
 function buildProfileSummary(profile: UserProfile): string {
   const parts: string[] = [];
 
   if (profile.personal.name) parts.push(`姓名：${profile.personal.name}`);
+  if (profile.personal.selfEvaluation) {
+    parts.push(`自我评价：${profile.personal.selfEvaluation}`);
+  }
 
   if (profile.education.length > 0) {
     const edu = profile.education[0];

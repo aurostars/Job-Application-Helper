@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { MessageService } from '../shared/message';
-import type { UserProfile, PersonalInfo } from '../shared/types';
+import type { UserProfile, PersonalInfo, CustomInformation } from '../shared/types';
 import { AISettings } from './AISettings';
 import { EducationSection } from './EducationSection';
 import { ExperienceSection } from './ExperienceSection';
+import { DataSyncSettings } from './DataSyncSettings';
 
 /** MIME 类型到扩展名的兜底映射，用于文件名缺少扩展名的情况 */
 const MIME_TO_EXT: Record<string, string> = {
@@ -30,21 +31,50 @@ function resolveFileType(file: File): string {
   return MIME_TO_EXT[file.type] || ext;
 }
 
+function resizeAutoGrowTextarea(element: HTMLTextAreaElement): void {
+  const singleLineHeight = 39;
+  element.style.height = 'auto';
+  element.style.height = `${Math.max(singleLineHeight, element.scrollHeight)}px`;
+}
+
 function App() {
   const [profile, setProfile] = useState<UserProfile>({
     personal: {} as PersonalInfo,
     education: [],
     experience: [],
     projects: [],
+    customInformation: [],
     skills: [],
     certifications: []
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('personal');
+  const [dataRevision, setDataRevision] = useState(0);
+  const [saveNotice, setSaveNotice] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
-    loadProfile();
+    if (!saveNotice) return;
+    const timer = window.setTimeout(() => setSaveNotice(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [saveNotice]);
+
+  useEffect(() => {
+    void loadProfile();
+    const handleStorageChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string,
+    ) => {
+      if (areaName === 'local' && changes.userProfile) {
+        void loadProfile();
+        setDataRevision(revision => revision + 1);
+      }
+    };
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
   }, []);
 
   const loadProfile = async () => {
@@ -55,12 +85,27 @@ function App() {
 
       if (response.success && response.data) {
         setProfile(response.data);
+      } else if (response.success) {
+        setProfile({
+          personal: {} as PersonalInfo,
+          education: [],
+          experience: [],
+          projects: [],
+          customInformation: [],
+          skills: [],
+          certifications: [],
+        });
       }
     } catch (error) {
       console.error('Failed to load profile:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExternalDataChange = () => {
+    void loadProfile();
+    setDataRevision(revision => revision + 1);
   };
 
   const handleSave = async () => {
@@ -72,13 +117,16 @@ function App() {
       });
 
       if (response.success) {
-        alert('保存成功！');
+        setSaveNotice({ type: 'success', text: '保存成功' });
       } else {
-        alert('保存失败：' + (response.error || '未知错误'));
+        setSaveNotice({
+          type: 'error',
+          text: `保存失败：${response.error || '未知错误'}`,
+        });
       }
     } catch (error) {
       console.error('Save error:', error);
-      alert('保存时出错');
+      setSaveNotice({ type: 'error', text: '保存时出错，请稍后重试' });
     } finally {
       setSaving(false);
     }
@@ -91,6 +139,38 @@ function App() {
         ...profile.personal,
         [field]: value
       }
+    });
+  };
+
+  const addCustomInformation = () => {
+    const item: CustomInformation = {
+      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: '',
+      content: '',
+    };
+    setProfile({
+      ...profile,
+      customInformation: [...(profile.customInformation || []), item],
+    });
+  };
+
+  const updateCustomInformation = (
+    id: string,
+    field: 'name' | 'content',
+    value: string
+  ) => {
+    setProfile({
+      ...profile,
+      customInformation: (profile.customInformation || []).map(item =>
+        item.id === id ? { ...item, [field]: value } : item
+      ),
+    });
+  };
+
+  const removeCustomInformation = (id: string) => {
+    setProfile({
+      ...profile,
+      customInformation: (profile.customInformation || []).filter(item => item.id !== id),
     });
   };
 
@@ -129,68 +209,77 @@ function App() {
   };
 
   if (loading) {
-    return <div style={styles.loading}>加载中...</div>;
+    return <div className="options-loading">加载中...</div>;
   }
 
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <h1 style={styles.title}>秋招网申助手 - 个人信息设置</h1>
+    <div className="options-shell">
+      {saveNotice && (
+        <div
+          className={`save-toast ${saveNotice.type}`}
+          role="status"
+          aria-live="polite"
+        >
+          {saveNotice.text}
+        </div>
+      )}
+      <header className="options-header">
+        <div className="options-header-inner">
+          <h1>个人信息设置</h1>
+          <p>集中维护网申资料，保存后即可在表单中快速调用。</p>
+        </div>
       </header>
 
-      <div style={styles.content}>
-        <div style={styles.tabs}>
+      <div className="options-content">
+        <nav className="options-tabs" aria-label="设置分类">
           <button
             onClick={() => setActiveTab('personal')}
-            style={{
-              ...styles.tab,
-              ...(activeTab === 'personal' && styles.activeTab)
-            }}
+            className={activeTab === 'personal' ? 'options-tab active' : 'options-tab'}
           >
             基本信息
           </button>
           <button
             onClick={() => setActiveTab('education')}
-            style={{
-              ...styles.tab,
-              ...(activeTab === 'education' && styles.activeTab)
-            }}
+            className={activeTab === 'education' ? 'options-tab active' : 'options-tab'}
           >
             教育经历
           </button>
           <button
             onClick={() => setActiveTab('experience')}
-            style={{
-              ...styles.tab,
-              ...(activeTab === 'experience' && styles.activeTab)
-            }}
+            className={activeTab === 'experience' ? 'options-tab active' : 'options-tab'}
           >
             实习与项目
           </button>
           <button
+            onClick={() => setActiveTab('custom')}
+            className={activeTab === 'custom' ? 'options-tab active' : 'options-tab'}
+          >
+            添加自定义信息
+          </button>
+          <button
             onClick={() => setActiveTab('resume')}
-            style={{
-              ...styles.tab,
-              ...(activeTab === 'resume' && styles.activeTab)
-            }}
+            className={activeTab === 'resume' ? 'options-tab active' : 'options-tab'}
           >
             简历上传
           </button>
           <button
             onClick={() => setActiveTab('ai')}
-            style={{
-              ...styles.tab,
-              ...(activeTab === 'ai' && styles.activeTab)
-            }}
+            className={activeTab === 'ai' ? 'options-tab active' : 'options-tab'}
           >
             AI设置
           </button>
-        </div>
+          <button
+            onClick={() => setActiveTab('data-sync')}
+            className={activeTab === 'data-sync' ? 'options-tab active' : 'options-tab'}
+          >
+            数据与同步
+          </button>
+        </nav>
 
-        <div style={styles.formContainer}>
+        <div className="options-panel">
           {activeTab === 'personal' && (
-            <div style={styles.form}>
-              <h2 style={styles.sectionTitle}>个人基本信息</h2>
+            <div className="options-form">
+              <h2 className="section-title">个人基本信息</h2>
 
               <div style={styles.formGroup}>
                 <label style={styles.label}>姓名 *</label>
@@ -327,15 +416,32 @@ function App() {
                 />
               </div>
 
-              <div style={styles.hint}>
-                💡 提示：带 * 的为必填项。你也可以通过上传简历来快速填充这些信息。
+              <div style={styles.formGroup}>
+                <label style={styles.label}>自我评价</label>
+                <textarea
+                  value={profile.personal.selfEvaluation || ''}
+                  onChange={(e) => {
+                    resizeAutoGrowTextarea(e.currentTarget);
+                    handlePersonalChange('selfEvaluation', e.target.value);
+                  }}
+                  ref={(element) => {
+                    if (element) resizeAutoGrowTextarea(element);
+                  }}
+                  style={{ ...styles.input, ...styles.autoGrowTextarea }}
+                  placeholder="简要描述个人优势、能力特点和职业倾向，可用于网申自我评价字段"
+                  rows={1}
+                />
+              </div>
+
+              <div className="info-note">
+                提示：带 * 的为必填项。你也可以通过上传简历来快速填充这些信息。
                 身份证号仅保存在本地浏览器中，不会上传到任何服务器。
               </div>
             </div>
           )}
 
           {activeTab === 'education' && (
-            <div style={styles.form}>
+            <div className="options-form">
               <EducationSection
                 items={profile.education || []}
                 onChange={education => setProfile({ ...profile, education })}
@@ -344,7 +450,7 @@ function App() {
           )}
 
           {activeTab === 'experience' && (
-            <div style={styles.form}>
+            <div className="options-form">
               <ExperienceSection
                 experience={profile.experience || []}
                 projects={profile.projects || []}
@@ -356,44 +462,109 @@ function App() {
             </div>
           )}
 
-          {activeTab === 'resume' && (
-            <div style={styles.form}>
-              <h2 style={styles.sectionTitle}>上传简历</h2>
+          {activeTab === 'custom' && (
+            <div className="options-form">
+              <div className="custom-information-header">
+                <div>
+                  <h2 className="section-title">自定义信息</h2>
+                  <p className="custom-information-description">
+                    添加网申中经常使用、但不属于现有分类的信息。
+                  </p>
+                </div>
+                <button type="button" className="btn btn-secondary" onClick={addCustomInformation}>
+                  添加
+                </button>
+              </div>
 
-              <div style={styles.uploadContainer}>
-                <div style={styles.uploadArea}>
+              {(profile.customInformation || []).length === 0 ? (
+                <div className="custom-information-empty">
+                  <p>暂无自定义信息</p>
+                  <span>点击“添加”创建信息名称和信息内容。</span>
+                </div>
+              ) : (
+                <div className="custom-information-list">
+                  {(profile.customInformation || []).map((item, index) => (
+                    <section className="custom-information-item" key={item.id}>
+                      <div className="custom-information-item-header">
+                        <h3>自定义信息 {index + 1}</h3>
+                        <button
+                          type="button"
+                          className="custom-information-remove"
+                          onClick={() => removeCustomInformation(item.id)}
+                          aria-label={`删除自定义信息 ${index + 1}`}
+                        >
+                          删除
+                        </button>
+                      </div>
+                      <div className="custom-information-fields">
+                        <label>
+                          <span>信息名称</span>
+                          <input
+                            type="text"
+                            value={item.name}
+                            onChange={event =>
+                              updateCustomInformation(item.id, 'name', event.target.value)
+                            }
+                            placeholder="例如：期望薪资"
+                          />
+                        </label>
+                        <label>
+                          <span>信息内容</span>
+                          <textarea
+                            value={item.content}
+                            onChange={event =>
+                              updateCustomInformation(item.id, 'content', event.target.value)
+                            }
+                            placeholder="请输入需要快速填写或复制的内容"
+                            rows={3}
+                          />
+                        </label>
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'resume' && (
+            <div className="options-form">
+              <h2 className="section-title">上传简历</h2>
+
+              <div className="upload-container">
+                <div className="upload-area">
                   <svg
                     width="48"
                     height="48"
                     viewBox="0 0 24 24"
                     fill="none"
-                    stroke="#667eea"
+                    stroke="currentColor"
                     strokeWidth="2"
                   >
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="17 8 12 3 7 8"></polyline>
                     <line x1="12" y1="3" x2="12" y2="15"></line>
                   </svg>
-                  <p style={styles.uploadText}>点击或拖拽文件到此处上传</p>
-                  <p style={styles.uploadHint}>支持 PDF、DOCX、MD、TXT、JSON 格式</p>
+                  <p className="upload-title">点击或拖拽文件到此处上传</p>
+                  <p className="upload-hint">支持 PDF、DOCX、MD、TXT、JSON 格式</p>
                   <input
                     type="file"
                     accept=".pdf,.doc,.docx,.md,.txt,.json"
                     onChange={handleFileUpload}
-                    style={styles.fileInput}
+                    className="file-input"
                   />
                 </div>
 
                 {profile.resume && (
-                  <div style={styles.resumeInfo}>
-                    <h3 style={styles.resumeTitle}>已上传的简历</h3>
-                    <div style={styles.resumeItem}>
+                  <div className="resume-info">
+                    <h3>已上传的简历</h3>
+                    <div className="resume-item">
                       <svg
                         width="24"
                         height="24"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#667eea"
+                        stroke="currentColor"
                         strokeWidth="2"
                       >
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -404,93 +575,33 @@ function App() {
                   </div>
                 )}
 
-                <div style={styles.hint}>
-                  💡 上传简历后，系统会自动解析并提取个人信息、教育经历、工作经验等内容。
+                <div className="info-note">
+                  上传简历后，系统会自动解析并提取个人信息、教育经历、工作经验等内容。
                 </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'ai' && <AISettings />}
-        </div>
+          {activeTab === 'ai' && <AISettings dataRevision={dataRevision} />}
 
-        {/* AI 设置页有自己的保存按钮（保存的是 LLM 配置），此处仅保存个人信息 */}
-        {activeTab !== 'ai' && (
-          <div style={styles.actions}>
-            <button onClick={handleSave} disabled={saving} style={styles.saveButton}>
+          {activeTab === 'data-sync' && (
+            <DataSyncSettings onDataChanged={handleExternalDataChange} />
+          )}
+
+          {activeTab !== 'ai' && activeTab !== 'data-sync' && (
+            <div className="options-actions">
+            <button onClick={handleSave} disabled={saving} className="btn btn-primary">
               {saving ? '保存中...' : '保存设置'}
             </button>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  container: {
-    minHeight: '100vh',
-    backgroundColor: '#f9fafb'
-  },
-  header: {
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: 'white',
-    padding: '30px 40px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-  },
-  title: {
-    margin: 0,
-    fontSize: '24px',
-    fontWeight: '600'
-  },
-  content: {
-    maxWidth: '800px',
-    margin: '40px auto',
-    padding: '0 20px'
-  },
-  loading: {
-    textAlign: 'center',
-    padding: '60px',
-    fontSize: '18px',
-    color: '#666'
-  },
-  tabs: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '20px'
-  },
-  tab: {
-    padding: '12px 24px',
-    border: 'none',
-    backgroundColor: '#f9fafb',
-    color: '#666',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    borderRadius: '8px 8px 0 0',
-    transition: 'all 0.2s',
-    fontFamily: 'inherit',
-    borderBottom: '3px solid transparent'
-  },
-  activeTab: {
-    backgroundColor: 'white',
-    color: '#667eea',
-    fontWeight: '600',
-    borderBottom: '3px solid #667eea'
-  },
-  formContainer: {
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    padding: '30px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
-  },
-  form: {},
-  sectionTitle: {
-    margin: '0 0 24px 0',
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#333'
-  },
   formGroup: {
     marginBottom: '20px',
     flex: 1
@@ -510,88 +621,18 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     padding: '10px 12px',
     fontSize: '14px',
-    border: '1px solid #d1d5db',
-    borderRadius: '6px',
+    border: '1px solid var(--color-border)',
+    borderRadius: '9px',
     outline: 'none',
     transition: 'border-color 0.2s',
     fontFamily: 'inherit'
   },
-  uploadContainer: {
-    textAlign: 'center'
-  },
-  uploadArea: {
-    position: 'relative',
-    border: '2px dashed #d1d5db',
-    borderRadius: '8px',
-    padding: '40px',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    marginBottom: '20px'
-  },
-  uploadText: {
-    margin: '16px 0 8px',
-    fontSize: '16px',
-    fontWeight: '500',
-    color: '#333'
-  },
-  uploadHint: {
-    margin: 0,
-    fontSize: '14px',
-    color: '#666'
-  },
-  fileInput: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    opacity: 0,
-    cursor: 'pointer'
-  },
-  resumeInfo: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: '8px',
-    padding: '20px',
-    marginBottom: '20px',
-    textAlign: 'left'
-  },
-  resumeTitle: {
-    margin: '0 0 12px 0',
-    fontSize: '14px',
-    fontWeight: '600',
-    color: '#333'
-  },
-  resumeItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    fontSize: '14px',
-    color: '#666'
-  },
-  hint: {
-    marginTop: '20px',
-    padding: '12px 16px',
-    backgroundColor: '#fef3c7',
-    borderRadius: '6px',
-    fontSize: '13px',
-    color: '#92400e',
-    textAlign: 'left'
-  },
-  actions: {
-    marginTop: '24px',
-    textAlign: 'center'
-  },
-  saveButton: {
-    padding: '14px 40px',
-    border: 'none',
-    borderRadius: '8px',
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: 'white',
-    fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    fontFamily: 'inherit'
+  autoGrowTextarea: {
+    minHeight: '39px',
+    height: '39px',
+    lineHeight: '18px',
+    overflowY: 'hidden',
+    resize: 'none'
   }
 };
 

@@ -159,7 +159,6 @@ export class NLPHelper {
   static parseResumeText(text: string): ParsedResumeData {
     const phones = this.extractPhone(text);
     const emails = this.extractEmail(text);
-    const dates = this.extractDates(text);
     const schools = this.extractSchools(text);
     const companies = this.extractCompanies(text);
     const skills = this.extractSkills(text);

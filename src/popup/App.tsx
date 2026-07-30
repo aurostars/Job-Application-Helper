@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { MessageService } from '../shared/message';
-import type { UserProfile } from '../shared/types';
+import type { Message, MessageResponse, UserProfile } from '../shared/types';
 
 function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [filling, setFilling] = useState(false);
+  const [startingAIRegion, setStartingAIRegion] = useState(false);
+  const [openingSidePanel, setOpeningSidePanel] = useState(false);
   const [detectedFields, setDetectedFields] = useState(0);
 
   useEffect(() => {
@@ -34,7 +36,7 @@ function App() {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab.id) return;
 
-      const response = await MessageService.sendMessageToTab(tab.id, {
+      const response = await sendMessageToActiveTab<{ count: number }>(tab.id, {
         type: 'DETECT_FIELDS'
       });
 
@@ -61,7 +63,7 @@ function App() {
         throw new Error('No active tab');
       }
 
-      const response = await MessageService.sendMessageToTab(tab.id, {
+      const response = await sendMessageToActiveTab(tab.id, {
         type: 'FILL_FORM'
       });
 
@@ -82,227 +84,197 @@ function App() {
     chrome.runtime.openOptionsPage();
   };
 
+  const handleStartAIRegionFill = async () => {
+    if (!profile) {
+      alert('请先设置个人信息！');
+      openOptions();
+      return;
+    }
+
+    setStartingAIRegion(true);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab.id) throw new Error('没有可用的当前页面');
+
+      const response = await sendMessageToActiveTab(tab.id, {
+        type: 'START_AI_REGION_FILL',
+      });
+      if (!response.success) {
+        throw new Error(response.error || '无法启动 AI 框选补填');
+      }
+
+      window.close();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '启动 AI 框选补填失败');
+      setStartingAIRegion(false);
+    }
+  };
+
+  const handleOpenSidePanel = async () => {
+    setOpeningSidePanel(true);
+    try {
+      await openSidePanelFallbackWindow();
+      window.close();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '打开资料窗口失败');
+      setOpeningSidePanel(false);
+    }
+  };
+
+  const openSidePanelFallbackWindow = async () => {
+    const currentWindow = await chrome.windows.getCurrent();
+    const width = 420;
+    const height = Math.max(640, Math.min(900, currentWindow.height || 800));
+    const left = currentWindow.left !== undefined && currentWindow.width !== undefined
+      ? currentWindow.left + Math.max(0, currentWindow.width - width)
+      : undefined;
+    const top = currentWindow.top;
+
+    await chrome.windows.create({
+      url: chrome.runtime.getURL(
+        `src/sidepanel/index.html?targetWindowId=${currentWindow.id ?? ''}`
+      ),
+      type: 'popup',
+      width,
+      height,
+      left,
+      top,
+      focused: true,
+    });
+  };
+
+  const sendMessageToActiveTab = async <T,>(
+    tabId: number,
+    message: Message
+  ): Promise<MessageResponse<T>> => {
+    let response = await MessageService.sendMessageToTab<T>(tabId, message);
+
+    if (!response.success && /Receiving end does not exist|Could not establish connection/i.test(response.error || '')) {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content.js'],
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 300));
+      response = await MessageService.sendMessageToTab<T>(tabId, message);
+    }
+
+    return response;
+  };
+
   if (loading) {
     return (
-      <div style={styles.container}>
-        <div style={styles.loading}>加载中...</div>
+      <div className="popup-shell">
+        <div className="popup-loading">加载中...</div>
       </div>
     );
   }
 
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <h1 style={styles.title}>秋招网申助手</h1>
+    <div className="popup-shell">
+      <header className="popup-header">
+        <img
+          className="popup-brand-mark"
+          src={chrome.runtime.getURL('icons/icon128.png')}
+          alt=""
+          aria-hidden="true"
+        />
+        <div>
+          <h1>秋招网申助手</h1>
+          <p>让每一次投递更高效</p>
+        </div>
       </header>
 
-      <div style={styles.content}>
+      <div className="popup-content">
         {profile ? (
-          <div style={styles.profileSection}>
-            <div style={styles.profileInfo}>
-              <div style={styles.infoRow}>
-                <span style={styles.label}>姓名：</span>
-                <span style={styles.value}>{profile.personal.name || '未设置'}</span>
+          <div className="profile-section">
+            <div className="profile-card">
+              <div className="profile-card-heading">当前信息</div>
+              <div className="profile-row">
+                <span className="profile-label">姓名</span>
+                <span className="profile-value">{profile.personal.name || '未设置'}</span>
               </div>
-              <div style={styles.infoRow}>
-                <span style={styles.label}>邮箱：</span>
-                <span style={styles.value}>{profile.personal.email || '未设置'}</span>
+              <div className="profile-row">
+                <span className="profile-label">邮箱</span>
+                <span className="profile-value">{profile.personal.email || '未设置'}</span>
               </div>
-              <div style={styles.infoRow}>
-                <span style={styles.label}>手机：</span>
-                <span style={styles.value}>{profile.personal.phone || '未设置'}</span>
+              <div className="profile-row">
+                <span className="profile-label">手机</span>
+                <span className="profile-value">{profile.personal.phone || '未设置'}</span>
               </div>
             </div>
 
-            <div style={styles.statsSection}>
-              <div style={styles.stat}>
-                <div style={styles.statValue}>{detectedFields}</div>
-                <div style={styles.statLabel}>检测到的字段</div>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="stat-value">{detectedFields}</div>
+                <div className="stat-label">可填字段</div>
               </div>
-              <div style={styles.stat}>
-                <div style={styles.statValue}>{profile.education.length}</div>
-                <div style={styles.statLabel}>教育经历</div>
+              <div className="stat-card">
+                <div className="stat-value">{profile.education.length}</div>
+                <div className="stat-label">教育经历</div>
               </div>
-              <div style={styles.stat}>
-                <div style={styles.statValue}>{profile.experience.length}</div>
-                <div style={styles.statLabel}>工作经历</div>
+              <div className="stat-card">
+                <div className="stat-value">{profile.experience.length}</div>
+                <div className="stat-label">工作经历</div>
               </div>
             </div>
           </div>
         ) : (
-          <div style={styles.emptyState}>
+          <div className="popup-empty-state">
             <svg
               width="64"
               height="64"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#ccc"
+              stroke="currentColor"
               strokeWidth="2"
-              style={{ marginBottom: '16px' }}
             >
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
               <circle cx="12" cy="7" r="4"></circle>
             </svg>
-            <p style={styles.emptyText}>尚未设置个人信息</p>
-            <p style={styles.emptySubtext}>请先完成个人信息设置</p>
+            <p className="empty-title">尚未设置个人信息</p>
+            <p className="empty-subtitle">完成资料设置后即可开始自动填充</p>
           </div>
         )}
 
-        <div style={styles.actions}>
+        <div className="popup-actions">
+          <button
+            onClick={handleOpenSidePanel}
+            disabled={openingSidePanel}
+            className="button button-secondary"
+          >
+            {openingSidePanel ? '正在打开浮窗...' : '打开信息浮窗'}
+          </button>
+
           <button
             onClick={handleFillForm}
-            disabled={!profile || filling || detectedFields === 0}
-            style={{
-              ...styles.button,
-              ...styles.primaryButton,
-              ...((!profile || filling || detectedFields === 0) && styles.disabledButton)
-            }}
+            disabled={!profile || filling || startingAIRegion}
+            className="button button-primary"
           >
             {filling ? '填充中...' : '一键填充表单'}
           </button>
 
-          <button onClick={openOptions} style={{ ...styles.button, ...styles.secondaryButton }}>
+          <button
+            onClick={handleStartAIRegionFill}
+            disabled={!profile || filling || startingAIRegion}
+            className="button button-tonal"
+          >
+            {startingAIRegion ? '正在启动框选...' : 'AI 框选补填'}
+          </button>
+
+          <button onClick={openOptions} className="button button-quiet">
             设置个人信息
           </button>
         </div>
 
         {detectedFields === 0 && profile && (
-          <div style={styles.hint}>
-            💡 当前页面未检测到可填充的表单字段
+          <div className="popup-hint">
+            当前页面未检测到可填充的表单字段
           </div>
         )}
       </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    width: '350px',
-    minHeight: '400px',
-    backgroundColor: '#f9fafb'
-  },
-  header: {
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: 'white',
-    padding: '20px',
-    textAlign: 'center'
-  },
-  title: {
-    margin: 0,
-    fontSize: '18px',
-    fontWeight: '600'
-  },
-  content: {
-    padding: '20px'
-  },
-  loading: {
-    textAlign: 'center',
-    padding: '40px',
-    color: '#666'
-  },
-  profileSection: {
-    marginBottom: '20px'
-  },
-  profileInfo: {
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    padding: '16px',
-    marginBottom: '16px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-  },
-  infoRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '8px',
-    fontSize: '14px'
-  },
-  label: {
-    color: '#666',
-    fontWeight: '500'
-  },
-  value: {
-    color: '#333',
-    fontWeight: '600'
-  },
-  statsSection: {
-    display: 'flex',
-    gap: '8px',
-    marginBottom: '16px'
-  },
-  stat: {
-    flex: 1,
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    padding: '12px',
-    textAlign: 'center',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-  },
-  statValue: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: '#667eea',
-    marginBottom: '4px'
-  },
-  statLabel: {
-    fontSize: '12px',
-    color: '#666'
-  },
-  emptyState: {
-    textAlign: 'center',
-    padding: '40px 20px',
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    marginBottom: '20px'
-  },
-  emptyText: {
-    margin: '0 0 8px 0',
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#333'
-  },
-  emptySubtext: {
-    margin: 0,
-    fontSize: '14px',
-    color: '#666'
-  },
-  actions: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  button: {
-    padding: '12px 20px',
-    borderRadius: '8px',
-    border: 'none',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    fontFamily: 'inherit'
-  },
-  primaryButton: {
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: 'white'
-  },
-  secondaryButton: {
-    backgroundColor: 'white',
-    color: '#667eea',
-    border: '2px solid #667eea'
-  },
-  disabledButton: {
-    opacity: 0.5,
-    cursor: 'not-allowed'
-  },
-  hint: {
-    marginTop: '16px',
-    padding: '12px',
-    backgroundColor: '#fef3c7',
-    borderRadius: '8px',
-    fontSize: '12px',
-    color: '#92400e',
-    textAlign: 'center'
-  }
-};
 
 export default App;

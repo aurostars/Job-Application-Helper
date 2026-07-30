@@ -8,11 +8,11 @@ export class LLMService {
     this.config = config;
   }
 
-  async chat(messages: ChatMessage[]): Promise<LLMResponse> {
+  async chat(messages: ChatMessage[], signal?: AbortSignal): Promise<LLMResponse> {
     if (this.config.provider === LLMProvider.CLAUDE) {
-      return this.callClaude(messages);
+      return this.callClaude(messages, signal);
     }
-    return this.callOpenAICompatible(messages);
+    return this.callOpenAICompatible(messages, signal);
   }
 
   /** 去掉用户粘贴地址时常见的结尾斜杠，避免出现 //chat/completions */
@@ -20,7 +20,7 @@ export class LLMService {
     return this.config.baseUrl.trim().replace(/\/+$/, '');
   }
 
-  private async callOpenAICompatible(messages: ChatMessage[]): Promise<LLMResponse> {
+  private async callOpenAICompatible(messages: ChatMessage[], signal?: AbortSignal): Promise<LLMResponse> {
     const response = await fetch(`${this.trimmedBaseUrl()}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -33,6 +33,7 @@ export class LLMService {
         temperature: this.config.temperature ?? 0.7,
         max_tokens: this.config.maxTokens ?? 4096,
       }),
+      signal,
     });
 
     if (!response.ok) {
@@ -68,7 +69,7 @@ export class LLMService {
     };
   }
 
-  private async callClaude(messages: ChatMessage[]): Promise<LLMResponse> {
+  private async callClaude(messages: ChatMessage[], signal?: AbortSignal): Promise<LLMResponse> {
     const systemMsg = messages.find(m => m.role === 'system')?.content || '';
     const nonSystemMessages = messages
       .filter(m => m.role !== 'system')
@@ -88,6 +89,7 @@ export class LLMService {
         max_tokens: this.config.maxTokens ?? 2048,
         temperature: this.config.temperature ?? 0.7,
       }),
+      signal,
     });
 
     if (!response.ok) {

@@ -1,13 +1,53 @@
-import type { Message, MessageResponse, UserProfile, ParsedResumeData } from '../shared/types';
+import type {
+  FocusedFieldWriteResult,
+  Message,
+  MessageResponse,
+  UserProfile,
+  ParsedResumeData,
+  WebDAVConfig,
+} from '../shared/types';
 import { StorageService } from '../shared/storage';
+import {
+  createBackupDocument,
+  createBackupSummary,
+  parseAndValidateBackup,
+  serializeBackup,
+} from '../shared/backup';
+import {
+  enqueueSync,
+  enqueueSyncAndWait,
+  forceDownloadRemote,
+  forceUploadLocal,
+  resolveConflict,
+} from '../shared/sync';
+import {
+  normalizeWebDAVServerUrl,
+  testConnection as testWebDAVConnection,
+  validateWebDAVUrl,
+} from '../services/webdav';
 import { parseResume, isStructuredType, parseStructuredResume } from '../parsers';
 import { NLPHelper } from '../utils/nlpHelper';
 import { LLMService } from '../services/llm/llmService';
-import { buildAnswerGenerationPrompt, buildResumeParsingPrompt, buildFieldMatchingPrompt } from '../services/llm/prompts';
+import {
+  buildAnswerGenerationPrompt,
+  buildResumeParsingPrompt,
+  buildFieldMatchingPrompt,
+  buildSectionFillPrompt,
+} from '../services/llm/prompts';
+import type { AIFillSectionPayload } from '../services/llm/prompts';
 import type { LLMConfig } from '../services/llm/types';
 
 // Background Service Worker 入口
 console.log('Background service worker started');
+
+const aiFillControllers = new Map<string, AbortController>();
+
+async function queueAutoSync(reason: string): Promise<'disabled' | 'queued'> {
+  const config = await StorageService.getWebDAVConfig();
+  if (!config?.enabled) return 'disabled';
+  enqueueSync(reason);
+  return 'queued';
+}
 
 // 监听消息
 chrome.runtime.onMessage.addListener(
@@ -35,7 +75,7 @@ chrome.runtime.onMessage.addListener(
 // 处理消息
 async function handleMessage(
   message: Message,
-  sender: chrome.runtime.MessageSender
+  _sender: chrome.runtime.MessageSender
 ): Promise<MessageResponse> {
   switch (message.type) {
     case 'GET_USER_PROFILE':
@@ -60,6 +100,15 @@ async function handleMessage(
     case 'MATCH_FIELDS_LLM':
       return await handleMatchFieldsLLM(message.payload);
 
+    case 'AI_FILL_SECTION':
+      return await handleAIFillSection(message.payload);
+
+    case 'CANCEL_AI_FILL':
+      return handleCancelAIFill(message.payload.requestId);
+
+    case 'WRITE_FOCUSED_FIELD':
+      return await handleWriteFocusedField(message.payload.tabId, message.payload.value);
+
     case 'GET_LLM_CONFIG':
       return await handleGetLLMConfig();
 
@@ -69,12 +118,153 @@ async function handleMessage(
     case 'TEST_LLM_CONNECTION':
       return await handleTestConnection(message.payload);
 
+    case 'EXPORT_BACKUP':
+      return await handleExportBackup();
+
+    case 'PREVIEW_BACKUP_IMPORT':
+      return handlePreviewBackup(message.payload.json);
+
+    case 'IMPORT_BACKUP':
+      return await handleImportBackup(message.payload.json);
+
+    case 'GET_WEBDAV_CONFIG':
+      return { success: true, data: await StorageService.getWebDAVConfig() };
+
+    case 'SAVE_WEBDAV_CONFIG':
+      return await handleSaveWebDAVConfig(message.payload);
+
+    case 'TEST_WEBDAV':
+      return await handleTestWebDAV(message.payload);
+
+    case 'GET_SYNC_STATUS':
+      return { success: true, data: await StorageService.getSyncMetadata() };
+
+    case 'SYNC_NOW':
+      return { success: true, data: { status: await enqueueSyncAndWait('manual') } };
+
+    case 'FORCE_UPLOAD_LOCAL':
+      return { success: true, data: { status: await forceUploadLocal() } };
+
+    case 'FORCE_DOWNLOAD_REMOTE':
+      return { success: true, data: { status: await forceDownloadRemote() } };
+
+    case 'RESOLVE_SYNC_CONFLICT':
+      return {
+        success: true,
+        data: { status: await resolveConflict(message.payload.choice) },
+      };
+
     default:
       return {
         success: false,
         error: 'Unknown message type'
       };
   }
+}
+
+async function handleWriteFocusedField(
+  tabId: number,
+  value: string
+): Promise<MessageResponse<FocusedFieldWriteResult>> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.id) {
+      return { success: true, data: { written: false, reason: 'NO_ACTIVE_TAB' } };
+    }
+
+    const url = tab.url || '';
+    if (isRestrictedPage(url)) {
+      return { success: true, data: { written: false, reason: 'RESTRICTED_PAGE' } };
+    }
+
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: 'APPLY_FOCUSED_FIELD',
+      payload: { value },
+    } satisfies Message) as MessageResponse<FocusedFieldWriteResult>;
+
+    return response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const reason = /Receiving end does not exist|Could not establish connection/i.test(message)
+      ? 'NO_CONTENT_SCRIPT'
+      : 'NO_ACTIVE_TAB';
+    return { success: true, data: { written: false, reason } };
+  }
+}
+
+function isRestrictedPage(url: string): boolean {
+  return (
+    /^(chrome|edge|about|chrome-extension|edge-extension):\/\//i.test(url) ||
+    /^https:\/\/chromewebstore\.google\.com\//i.test(url) ||
+    /^https:\/\/microsoftedge\.microsoft\.com\/addons\//i.test(url)
+  );
+}
+
+async function handleAIFillSection(
+  payload: AIFillSectionPayload
+): Promise<MessageResponse<Record<string, string>>> {
+  const controller = new AbortController();
+  aiFillControllers.set(payload.requestId, controller);
+
+  try {
+    const config = await StorageService.getLLMConfig();
+    if (!config?.apiKey) {
+      return { success: false, error: '请先在设置中配置 AI 服务' };
+    }
+
+    const profile = await StorageService.getUserProfile();
+    if (!profile) {
+      return { success: false, error: '请先保存个人资料' };
+    }
+
+    const llm = new LLMService(config);
+    const { system, user } = buildSectionFillPrompt(payload, profile);
+    const result = await llm.chat([
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ], controller.signal);
+
+    let jsonStr = result.content.trim();
+    if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    }
+    const rawMappings = JSON.parse(jsonStr) as Record<string, unknown>;
+    const validFields = new Map(payload.fields.map(field => [String(field.index), field]));
+    const mappings: Record<string, string> = {};
+
+    for (const [index, rawValue] of Object.entries(rawMappings)) {
+      const field = validFields.get(index);
+      if (!field || typeof rawValue !== 'string') continue;
+
+      const value = rawValue.trim();
+      if (!value) continue;
+      if (field.options.length > 0 && !field.options.includes(value)) continue;
+      mappings[index] = value;
+    }
+
+    return { success: true, data: mappings };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return { success: false, error: 'AI 补填已终止' };
+    }
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'AI 补填失败',
+    };
+  } finally {
+    aiFillControllers.delete(payload.requestId);
+  }
+}
+
+function handleCancelAIFill(requestId: string): MessageResponse {
+  const controller = aiFillControllers.get(requestId);
+  if (!controller) {
+    return { success: true, data: { cancelled: false } };
+  }
+
+  controller.abort();
+  aiFillControllers.delete(requestId);
+  return { success: true, data: { cancelled: true } };
 }
 
 // 获取用户资料
@@ -99,8 +289,10 @@ async function handleSaveUserProfile(
 ): Promise<MessageResponse> {
   try {
     const success = await StorageService.saveUserProfile(profile);
+    const sync = success ? await queueAutoSync('profile-save') : 'disabled';
     return {
       success,
+      data: success ? { localSaved: true, sync } : undefined,
       error: success ? undefined : 'Failed to save user profile'
     };
   } catch (error) {
@@ -149,6 +341,7 @@ async function handleParseResume(
       education: (parsedData.education || currentProfile?.education || []) as any,
       experience: (parsedData.experience || currentProfile?.experience || []) as any,
       projects: (parsedData.projects || currentProfile?.projects || []) as any,
+      customInformation: currentProfile?.customInformation || [],
       skills: parsedData.skills || currentProfile?.skills || [],
       certifications: currentProfile?.certifications || [],
       resume: {
@@ -160,7 +353,11 @@ async function handleParseResume(
       }
     };
 
-    await StorageService.saveUserProfile(updatedProfile);
+    const saved = await StorageService.saveUserProfile(updatedProfile);
+    if (!saved) {
+      return { success: false, error: '简历已解析，但保存个人信息失败' };
+    }
+    await queueAutoSync('resume-save');
 
     return {
       success: true,
@@ -324,11 +521,87 @@ async function handleGetLLMConfig(): Promise<MessageResponse> {
 async function handleSaveLLMConfig(config: LLMConfig): Promise<MessageResponse> {
   try {
     const success = await StorageService.saveLLMConfig(config);
-    return { success };
+    const sync = success ? await queueAutoSync('llm-save') : 'disabled';
+    return {
+      success,
+      data: success ? { localSaved: true, sync } : undefined,
+    };
   } catch (error) {
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to save LLM config',
+    };
+  }
+}
+
+function backupFilename(date = new Date()): string {
+  const compact = date.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+  return `job-application-helper-backup-${compact}.json`;
+}
+
+async function handleExportBackup(): Promise<MessageResponse> {
+  const data = await StorageService.getBackupData();
+  const document = createBackupDocument(data, chrome.runtime.getManifest().version);
+  return {
+    success: true,
+    data: {
+      json: serializeBackup(document),
+      filename: backupFilename(),
+    },
+  };
+}
+
+function handlePreviewBackup(json: string): MessageResponse {
+  const parsed = parseAndValidateBackup(json);
+  if (!parsed.success) {
+    return { success: false, error: `${parsed.error.code}: ${parsed.error.message}` };
+  }
+  return { success: true, data: createBackupSummary(parsed.document) };
+}
+
+async function handleImportBackup(json: string): Promise<MessageResponse> {
+  const parsed = parseAndValidateBackup(json);
+  if (!parsed.success) {
+    return { success: false, error: `${parsed.error.code}: ${parsed.error.message}` };
+  }
+  await StorageService.replaceBusinessData(parsed.document.data);
+  const sync = await queueAutoSync('backup-import');
+  return {
+    success: true,
+    data: { imported: true, summary: createBackupSummary(parsed.document), sync },
+  };
+}
+
+async function handleSaveWebDAVConfig(config: WebDAVConfig): Promise<MessageResponse> {
+  const urlError = config.serverUrl.trim() ? validateWebDAVUrl(config.serverUrl) : null;
+  if (config.enabled && !config.serverUrl.trim()) {
+    return { success: false, error: '启用同步前请填写 WebDAV 服务器地址' };
+  }
+  if (urlError) return { success: false, error: urlError };
+  await StorageService.saveWebDAVConfig({
+    ...config,
+    serverUrl: config.serverUrl.trim()
+      ? normalizeWebDAVServerUrl(config.serverUrl)
+      : '',
+    username: config.username.trim(),
+  });
+  return { success: true };
+}
+
+async function handleTestWebDAV(config: WebDAVConfig): Promise<MessageResponse> {
+  try {
+    const result = await testWebDAVConnection(config);
+    return {
+      success: true,
+      data: {
+        exists: result.exists,
+        message: result.exists ? '连接成功，已找到远端文件' : '连接成功，远端文件尚未创建',
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'WebDAV 连接测试失败',
     };
   }
 }

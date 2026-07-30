@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/post-build.js",
     "lint": "oxlint",
+    "test": "node --test src/shared/backup-sync.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -19,6 +20,8 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.3",
+    "@emnapi/runtime": "^1.11.3",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

@@ -58,6 +58,32 @@ export class FieldMatcher {
       return { fieldType: FieldType.RESUME_FILE, confidence: 0.8 };
     }
 
+    // 字节等站点会使用 education_type 作为学历类型字段名。
+    // 必须在通用的 education/school 模式前精确判断，避免被误识别成学校。
+    if (/学历类型|学习形式|培养方式|education[_\s-]?type|study[_\s-]?type/.test(searchText)) {
+      return { fieldType: FieldType.EDUCATION_TYPE, confidence: 1.0 };
+    }
+
+    const hasEducationContext = /教育|学校|院校|大学|学院|就读|入学|毕业|education|school|university|college|academic|enroll|enrol|admission/.test(searchText);
+    const hasWorkContext = /工作|实习|公司|单位|入职|离职|岗位|职位|work|job|company|employer|intern|employment/.test(searchText);
+    if (hasEducationContext && !hasWorkContext) {
+      if (/结束|毕业|预计毕业|to|end|finish|graduate|graduation/.test(searchText)) {
+        return { fieldType: FieldType.GRADUATION_DATE, confidence: 0.95 };
+      }
+      if (/开始|起始|入学|就读开始|from|begin|enroll|enrol|admission|educationstart/.test(searchText)) {
+        return { fieldType: FieldType.EDUCATION_START_DATE, confidence: 0.95 };
+      }
+    }
+
+    if (hasWorkContext && !hasEducationContext) {
+      if (/结束|离职|结束时间|to|end|finish/.test(searchText)) {
+        return { fieldType: FieldType.END_DATE, confidence: 0.95 };
+      }
+      if (/开始|起始|入职|开始时间|from|begin|startdate/.test(searchText)) {
+        return { fieldType: FieldType.START_DATE, confidence: 0.95 };
+      }
+    }
+
     // 遍历所有字段模式进行匹配
     let bestMatch = { fieldType: FieldType.UNKNOWN, confidence: 0 };
 
@@ -93,8 +119,28 @@ export class FieldMatcher {
     type: string;
     autocomplete: string;
   } {
-    const name = element.getAttribute('name') || '';
-    const id = element.id || '';
+    const fieldContainer = element.closest<HTMLElement>(
+      '[data-form-field-id], [data-form-field-name], [data-form-field-i18n-name]'
+    );
+    const elementDataId = element.getAttribute('data-form-field-id') || '';
+    const elementDataName = element.getAttribute('data-form-field-name') || '';
+    const elementDataI18nName = element.getAttribute('data-form-field-i18n-name') || '';
+    const containerDataId = fieldContainer?.getAttribute('data-form-field-id') || '';
+    const containerDataName = fieldContainer?.getAttribute('data-form-field-name') || '';
+    const containerDataI18nName = fieldContainer?.getAttribute('data-form-field-i18n-name') || '';
+
+    const name = [
+      element.getAttribute('name') || '',
+      elementDataName,
+      elementDataId,
+      containerDataName,
+      containerDataId,
+    ].filter(Boolean).join(' ');
+    const id = [
+      element.id || '',
+      elementDataId,
+      containerDataId,
+    ].filter(Boolean).join(' ');
     const placeholder = element.getAttribute('placeholder') || '';
     const type = element.getAttribute('type') || '';
     const autocomplete = element.getAttribute('autocomplete') || '';
@@ -102,7 +148,16 @@ export class FieldMatcher {
     // 查找关联的 label
     let labelText = '';
     if (id) {
-      const label = document.querySelector(`label[for="${id}"]`);
+      const label = element.id ? document.querySelector(`label[for="${element.id}"]`) : null;
+      if (label) {
+        labelText = label.textContent || '';
+      }
+    }
+
+    if (!labelText && fieldContainer) {
+      const label = fieldContainer.querySelector(
+        '.ud-formily-item-label label, .ud-formily-item-label, label'
+      );
       if (label) {
         labelText = label.textContent || '';
       }
@@ -125,6 +180,35 @@ export class FieldMatcher {
           break;
         }
         prevSibling = prevSibling.previousElementSibling;
+      }
+    }
+
+    if (!labelText) {
+      labelText = [elementDataI18nName, containerDataI18nName].filter(Boolean).join(' ');
+    }
+
+    const moduleContainer = element.closest<HTMLElement>('[class*=applyFormModuleWrapper]');
+    const moduleText = (moduleContainer?.textContent || '').replace(/\s+/g, ' ').trim();
+    const contextText = `${moduleText} ${labelText} ${name} ${id}`;
+
+    if (fieldContainer && /起止时间|date range|start.*end|start_end/i.test(`${labelText} ${name} ${id}`)) {
+      const fieldsInContainer = Array.from(
+        fieldContainer.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+          'input:not([type="hidden"]), textarea, select'
+        )
+      );
+      const fieldIndex = fieldsInContainer.indexOf(element);
+      const isEducationRange = /教育经历|学历类型|学校名称|学院|导师/.test(contextText);
+      const isWorkRange = /实习经历|工作经历|公司名称|职位名称|没有实习经历/.test(contextText);
+
+      if (isEducationRange && fieldIndex === 0) {
+        labelText = `${labelText} 入学时间 educationstart`;
+      } else if (isEducationRange && fieldIndex === 1) {
+        labelText = `${labelText} 毕业时间 graduation`;
+      } else if (isWorkRange && fieldIndex === 0) {
+        labelText = `${labelText} 开始时间 startdate`;
+      } else if (isWorkRange && fieldIndex === 1) {
+        labelText = `${labelText} 结束时间 enddate`;
       }
     }
 

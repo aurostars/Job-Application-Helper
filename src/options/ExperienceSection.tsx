@@ -1,6 +1,6 @@
 import React from 'react';
 import type { ExperienceInfo, ProjectInfo } from '../shared/types';
-import { sectionStyles as styles } from './EducationSection';
+import { sectionStyles as styles } from './sectionStyles';
 
 interface Props {
   experience: ExperienceInfo[];
@@ -69,8 +69,8 @@ export function ExperienceSection({
               {index === 0 ? '主要经历' : `经历 ${index + 1}`}
             </span>
             <div style={styles.cardActions}>
-              <button onClick={() => moveExp(index, -1)} disabled={index === 0} style={styles.iconButton}>↑</button>
-              <button onClick={() => moveExp(index, 1)} disabled={index === experience.length - 1} style={styles.iconButton}>↓</button>
+              <button onClick={() => moveExp(index, -1)} disabled={index === 0} style={styles.iconButton}>上移</button>
+              <button onClick={() => moveExp(index, 1)} disabled={index === experience.length - 1} style={styles.iconButton}>下移</button>
               <button
                 onClick={() => onChangeExperience(experience.filter((_, i) => i !== index))}
                 style={styles.removeButton}
@@ -154,7 +154,7 @@ export function ExperienceSection({
         }
         style={styles.addButton}
       >
-        + 添加实习经历
+        添加实习经历
       </button>
 
       <h2 style={{ ...styles.sectionTitle, marginTop: '36px' }}>项目 / 校园经历</h2>
@@ -171,8 +171,8 @@ export function ExperienceSection({
           <div style={styles.cardHeader}>
             <span style={styles.cardIndex}>项目 {index + 1}</span>
             <div style={styles.cardActions}>
-              <button onClick={() => moveProj(index, -1)} disabled={index === 0} style={styles.iconButton}>↑</button>
-              <button onClick={() => moveProj(index, 1)} disabled={index === projects.length - 1} style={styles.iconButton}>↓</button>
+              <button onClick={() => moveProj(index, -1)} disabled={index === 0} style={styles.iconButton}>上移</button>
+              <button onClick={() => moveProj(index, 1)} disabled={index === projects.length - 1} style={styles.iconButton}>下移</button>
               <button
                 onClick={() => onChangeProjects(projects.filter((_, i) => i !== index))}
                 style={styles.removeButton}
@@ -257,7 +257,7 @@ export function ExperienceSection({
         }
         style={styles.addButton}
       >
-        + 添加项目经历
+        添加项目经历
       </button>
 
       <h2 style={{ ...styles.sectionTitle, marginTop: '36px' }}>专业技能</h2>

@@ -31,9 +31,17 @@ export const FIELD_PATTERNS: Record<string, string[]> = {
     'school', 'university', 'college', 'institute', '学校', '院校',
     '毕业院校', '就读学校', 'education', 'alma'
   ],
+  [FieldType.COLLEGE]: [
+    'college', 'department', 'faculty', 'schoolof', 'institute',
+    '学院', '院系', '所在学院', '所属学院', '系别', '院系名称'
+  ],
+  [FieldType.EDUCATION_TYPE]: [
+    'educationtype', 'education_type', 'studytype', '学历类型',
+    '学习形式', '培养方式', '全日制', '非全日制'
+  ],
   [FieldType.MAJOR]: [
     'major', 'specialty', 'discipline', 'subject', '专业', '所学专业',
-    '专业名称', 'fieldofstudy', 'course'
+    '专业名称', 'fieldofstudy', 'field_of_study', 'course'
   ],
   [FieldType.DEGREE]: [
     'degree', 'education', 'diploma', 'qualification', '学历', '学位',
@@ -42,6 +50,15 @@ export const FIELD_PATTERNS: Record<string, string[]> = {
   [FieldType.GPA]: [
     'gpa', 'grade', 'score', 'average', '成绩', '绩点', '平均分',
     '学分绩点', 'gradepoint'
+  ],
+  [FieldType.SELF_EVALUATION]: [
+    'selfevaluation', 'self_evaluation', 'selfassessment', 'personalsummary',
+    '自我评价', '个人评价', '个人总结', '个人优势', '自我描述'
+  ],
+  [FieldType.EDUCATION_START_DATE]: [
+    '入学时间', '入学日期', '入学年月', '就读开始', '就读起始',
+    '教育开始时间', '教育开始日期', 'educationstart', 'educationstartdate',
+    'schoolstart', 'schoolstartdate', 'enrollment', 'enrolment', 'admissiondate'
   ],
   [FieldType.GRADUATION_DATE]: [
     'graduation', 'graduate', 'enddate', '毕业时间', '毕业日期',
