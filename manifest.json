@@ -9,7 +9,8 @@
     "scripting",
     "activeTab",
     "sidePanel",
-    "clipboardWrite"
+    "clipboardWrite",
+    "offscreen"
   ],
   "host_permissions": [
     "https://*/*"
@@ -45,7 +46,7 @@
   "options_page": "src/options/index.html",
   "web_accessible_resources": [
     {
-      "resources": ["icons/*"],
+      "resources": ["icons/*", "pdf.worker.min.js"],
       "matches": ["<all_urls>"]
     }
   ]

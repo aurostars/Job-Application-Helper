@@ -1,15 +1,25 @@
 export async function parsePDF(base64Data: string): Promise<string> {
   try {
+    console.log('[PDF Parser] Starting PDF parsing...');
+
     // 动态导入 pdfjs-dist
     const pdfjsLib = await import('pdfjs-dist');
+    console.log('[PDF Parser] PDF.js loaded, version:', pdfjsLib.version);
 
-    // 设置 worker 路径
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    // 在扩展环境中使用打包的 worker 文件
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdf.worker.min.js');
+      console.log('[PDF Parser] Worker path set to:', pdfjsLib.GlobalWorkerOptions.workerSrc);
+    } else {
+      // 开发环境备用方案
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    }
 
     // 移除 base64 前缀
     const base64String = base64Data.includes(',')
       ? base64Data.split(',')[1]
       : base64Data;
+    console.log('[PDF Parser] Base64 data length:', base64String.length);
 
     // 转换为 Uint8Array
     const binaryString = atob(base64String);
@@ -17,9 +27,15 @@ export async function parsePDF(base64Data: string): Promise<string> {
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
+    console.log('[PDF Parser] Converted to bytes, length:', bytes.length);
 
     // 加载 PDF
-    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    console.log('[PDF Parser] Loading PDF document...');
+    const pdf = await pdfjsLib.getDocument({
+      data: bytes,
+    }).promise;
+
+    console.log('[PDF Parser] PDF loaded, pages:', pdf.numPages);
 
     let fullText = '';
 
@@ -38,7 +54,11 @@ export async function parsePDF(base64Data: string): Promise<string> {
 
     return fullText.trim();
   } catch (error) {
-    console.error('PDF parsing error:', error);
-    throw new Error('Failed to parse PDF file');
+    console.error('[PDF Parser] PDF parsing error:', error);
+    // 返回详细的错误信息
+    const errorMessage = error instanceof Error
+      ? `${error.name}: ${error.message}\n${error.stack || ''}`
+      : String(error);
+    throw new Error(`Failed to parse PDF file: ${errorMessage}`);
   }
 }
