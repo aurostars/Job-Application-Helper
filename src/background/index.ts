@@ -88,7 +88,8 @@ async function handleMessage(
       return await handleParseResume(
         message.payload.file,
         message.payload.fileType,
-        message.payload.fileName
+        message.payload.fileName,
+        message.payload.rawText
       );
 
     case 'GET_RESUME_DATA':
@@ -307,10 +308,11 @@ async function handleSaveUserProfile(
 async function handleParseResume(
   fileData: string,
   fileType: string,
-  fileName: string
+  fileName: string,
+  preParsedText?: string
 ): Promise<MessageResponse> {
   try {
-    const rawText = await parseResume(fileData, fileType);
+    const rawText = preParsedText ?? await parseResume(fileData, fileType);
 
     let parsedData: ParsedResumeData;
 

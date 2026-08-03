@@ -194,7 +194,7 @@ export interface FocusedFieldWriteResult {
 export type Message =
   | { type: 'GET_USER_PROFILE'; payload?: null }
   | { type: 'SAVE_USER_PROFILE'; payload: UserProfile }
-  | { type: 'PARSE_RESUME'; payload: { file: string; fileType: string; fileName: string } }
+  | { type: 'PARSE_RESUME'; payload: { file: string; fileType: string; fileName: string; rawText?: string } }
   | { type: 'FILL_FORM'; payload?: null }
   | { type: 'DETECT_FIELDS'; payload?: null }
   | { type: 'START_AI_REGION_FILL'; payload?: null }

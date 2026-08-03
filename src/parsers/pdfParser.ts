@@ -6,13 +6,17 @@ export async function parsePDF(base64Data: string): Promise<string> {
     const pdfjsLib = await import('pdfjs-dist');
     console.log('[PDF Parser] PDF.js loaded, version:', pdfjsLib.version);
 
-    // 在扩展环境中使用打包的 worker 文件
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+    const hasDOM = typeof window !== 'undefined' && typeof document !== 'undefined';
+
+    // 在扩展环境且存在 DOM 时使用打包的 worker 文件
+    if (hasDOM && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('pdf.worker.min.js');
       console.log('[PDF Parser] Worker path set to:', pdfjsLib.GlobalWorkerOptions.workerSrc);
-    } else {
+    } else if (hasDOM) {
       // 开发环境备用方案
       pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    } else {
+      console.log('[PDF Parser] No DOM detected, parsing PDF without worker');
     }
 
     // 移除 base64 前缀
@@ -31,9 +35,11 @@ export async function parsePDF(base64Data: string): Promise<string> {
 
     // 加载 PDF
     console.log('[PDF Parser] Loading PDF document...');
-    const pdf = await pdfjsLib.getDocument({
+    const documentInit = {
       data: bytes,
-    }).promise;
+      ...(hasDOM ? {} : { disableWorker: true }),
+    } as any;
+    const pdf = await pdfjsLib.getDocument(documentInit).promise;
 
     console.log('[PDF Parser] PDF loaded, pages:', pdf.numPages);
 

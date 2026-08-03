@@ -20,7 +20,7 @@ export async function parseResume(
     case 'pdf':
       // PDF 解析需要在有 DOM 环境中执行
       // 在 service worker 中，通过 offscreen document 处理
-      if (typeof window === 'undefined' && typeof chrome !== 'undefined') {
+      if (typeof window === 'undefined' && typeof chrome !== 'undefined' && canUseOffscreenDocument()) {
         return await parsePDFInOffscreen(base64Data);
       }
       return await parsePDF(base64Data);
@@ -41,15 +41,31 @@ export async function parseResume(
   }
 }
 
+function canUseOffscreenDocument(): boolean {
+  return Boolean(
+    typeof chrome !== 'undefined' &&
+    chrome.runtime &&
+    chrome.offscreen &&
+    typeof chrome.offscreen.createDocument === 'function'
+  );
+}
+
 /** 在 offscreen document 中解析 PDF（用于 service worker 环境） */
 async function parsePDFInOffscreen(base64Data: string): Promise<string> {
   try {
     console.log('Attempting to parse PDF in offscreen document...');
 
+    if (!canUseOffscreenDocument()) {
+      console.warn('Offscreen API unavailable, falling back to direct PDF parsing');
+      return await parsePDF(base64Data);
+    }
+
     // 确保 offscreen document 存在
-    const existingContexts = await chrome.runtime.getContexts({
-      contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
-    });
+    const existingContexts = typeof chrome.runtime.getContexts === 'function'
+      ? await chrome.runtime.getContexts({
+        contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
+      })
+      : [];
 
     console.log('Existing offscreen contexts:', existingContexts.length);
 

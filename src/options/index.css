@@ -322,6 +322,17 @@ textarea:focus {
   background: var(--color-primary-soft);
 }
 
+.upload-area.parsing {
+  border-color: #c7d2fe;
+  background: #f5f7ff;
+  cursor: progress;
+}
+
+.upload-area.parsing:hover {
+  border-color: #c7d2fe;
+  background: #f5f7ff;
+}
+
 .upload-title {
   margin: 14px 0 7px;
   color: var(--color-text);
@@ -342,6 +353,39 @@ textarea:focus {
   height: 100%;
   opacity: 0;
   cursor: pointer;
+}
+
+.file-input:disabled {
+  cursor: not-allowed;
+}
+
+.resume-notice {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #f8f9fb;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+}
+
+.resume-notice.info {
+  border-color: #c7d2fe;
+  color: #4338ca;
+  background: #eef2ff;
+}
+
+.resume-notice.success {
+  border-color: #a7f3d0;
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.resume-notice.error {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fef2f2;
 }
 
 .resume-info {

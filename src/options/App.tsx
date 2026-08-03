@@ -5,6 +5,7 @@ import { AISettings } from './AISettings';
 import { EducationSection } from './EducationSection';
 import { ExperienceSection } from './ExperienceSection';
 import { DataSyncSettings } from './DataSyncSettings';
+import { parsePDF } from '../parsers/pdfParser';
 
 /** MIME 类型到扩展名的兜底映射，用于文件名缺少扩展名的情况 */
 const MIME_TO_EXT: Record<string, string> = {
@@ -51,6 +52,11 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('personal');
   const [dataRevision, setDataRevision] = useState(0);
+  const [parsingResume, setParsingResume] = useState(false);
+  const [resumeNotice, setResumeNotice] = useState<{
+    type: 'info' | 'success' | 'error';
+    text: string;
+  } | null>(null);
   const [saveNotice, setSaveNotice] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -178,30 +184,45 @@ function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setParsingResume(true);
+    setResumeNotice({ type: 'info', text: `正在解析「${file.name}」，请稍候...` });
+
     const reader = new FileReader();
     reader.onload = async (event) => {
       const base64Data = event.target?.result as string;
       const fileType = resolveFileType(file);
 
       try {
+        const rawText = fileType === 'pdf'
+          ? await parsePDF(base64Data)
+          : undefined;
+
         const response = await MessageService.sendMessage({
           type: 'PARSE_RESUME',
           payload: {
             file: base64Data,
             fileType,
-            fileName: file.name
+            fileName: file.name,
+            rawText,
           }
         });
 
         if (response.success && response.data) {
-          alert('简历解析成功！请检查并确认提取的信息。');
+          setSaveNotice({ type: 'success', text: '简历解析成功，请检查并确认提取的信息' });
+          setResumeNotice({ type: 'success', text: `「${file.name}」解析完成，已更新到当前资料。` });
           loadProfile();
         } else {
-          alert('简历解析失败：' + (response.error || '未知错误'));
+          const message = response.error || '未知错误';
+          setSaveNotice({ type: 'error', text: '简历解析失败，请重试' });
+          setResumeNotice({ type: 'error', text: `简历解析失败：${message}` });
         }
       } catch (error) {
         console.error('Upload error:', error);
-        alert('上传简历时出错');
+        setSaveNotice({ type: 'error', text: '上传简历时出错，请稍后重试' });
+        setResumeNotice({ type: 'error', text: '上传简历时出错，请稍后重试。' });
+      } finally {
+        setParsingResume(false);
+        e.target.value = '';
       }
     };
 
@@ -532,7 +553,7 @@ function App() {
               <h2 className="section-title">上传简历</h2>
 
               <div className="upload-container">
-                <div className="upload-area">
+                <div className={parsingResume ? 'upload-area parsing' : 'upload-area'}>
                   <svg
                     width="48"
                     height="48"
@@ -545,15 +566,24 @@ function App() {
                     <polyline points="17 8 12 3 7 8"></polyline>
                     <line x1="12" y1="3" x2="12" y2="15"></line>
                   </svg>
-                  <p className="upload-title">点击或拖拽文件到此处上传</p>
-                  <p className="upload-hint">支持 PDF、DOCX、MD、TXT、JSON 格式</p>
+                  <p className="upload-title">{parsingResume ? '正在解析简历...' : '点击或拖拽文件到此处上传'}</p>
+                  <p className="upload-hint">
+                    {parsingResume ? '请保持当前页面打开，解析完成后会自动提示。' : '支持 PDF、DOCX、MD、TXT、JSON 格式'}
+                  </p>
                   <input
                     type="file"
                     accept=".pdf,.doc,.docx,.md,.txt,.json"
                     onChange={handleFileUpload}
                     className="file-input"
+                    disabled={parsingResume}
                   />
                 </div>
+
+                {resumeNotice && (
+                  <div className={`resume-notice ${resumeNotice.type}`} role="status" aria-live="polite">
+                    {resumeNotice.text}
+                  </div>
+                )}
 
                 {profile.resume && (
                   <div className="resume-info">
