@@ -304,6 +304,27 @@ async function handleSaveUserProfile(
   }
 }
 
+/** 去掉空字符串/空白值，避免解析结果把已填字段清空 */
+function dropEmptyValues<T extends object>(source: T | undefined): Partial<T> {
+  if (!source) return {};
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (typeof value === 'string' && !value.trim()) continue;
+    if (value === null || value === undefined) continue;
+    result[key] = value;
+  }
+  return result as Partial<T>;
+}
+
+/**
+ * 解析结果为空数组时保留原有内容。
+ * 直接用 `parsed || current` 不行：空数组是真值，会把已有记录清空。
+ */
+function pickNonEmpty<T>(parsed: T[] | undefined, current: T[] | undefined): T[] {
+  if (parsed && parsed.length > 0) return parsed;
+  return current || [];
+}
+
 // 解析简历
 async function handleParseResume(
   fileData: string,
@@ -315,16 +336,22 @@ async function handleParseResume(
     const rawText = preParsedText ?? await parseResume(fileData, fileType);
 
     let parsedData: ParsedResumeData;
+    let parseMethod: 'structured' | 'llm' | 'regex' = 'regex';
+    let llmError: string | undefined;
 
     if (isStructuredType(fileType)) {
       // JSON 简历本身已结构化，直接映射，避免 LLM 二次推断带来的误差
       parsedData = parseStructuredResume(rawText);
+      parseMethod = 'structured';
     } else {
       const llmConfig = await StorageService.getLLMConfig();
       if (llmConfig?.apiKey) {
         try {
           parsedData = await parseResumeWithLLM(rawText, llmConfig);
+          parseMethod = 'llm';
         } catch (error) {
+          // 静默回退会让用户以为 AI 生效了，这里记下原因并回报给界面
+          llmError = error instanceof Error ? error.message : String(error);
           console.warn('LLM resume parsing failed, falling back to regex:', error);
           parsedData = NLPHelper.parseResumeText(rawText);
         }
@@ -336,15 +363,16 @@ async function handleParseResume(
     const currentProfile = await StorageService.getUserProfile();
 
     const updatedProfile: UserProfile = {
+      // 解析结果里的空值不能覆盖用户已填的内容
       personal: {
         ...(currentProfile?.personal || {}),
-        ...(parsedData.personal || {})
+        ...dropEmptyValues(parsedData.personal)
       } as any,
-      education: (parsedData.education || currentProfile?.education || []) as any,
-      experience: (parsedData.experience || currentProfile?.experience || []) as any,
-      projects: (parsedData.projects || currentProfile?.projects || []) as any,
+      education: pickNonEmpty(parsedData.education, currentProfile?.education) as any,
+      experience: pickNonEmpty(parsedData.experience, currentProfile?.experience) as any,
+      projects: pickNonEmpty(parsedData.projects, currentProfile?.projects) as any,
       customInformation: currentProfile?.customInformation || [],
-      skills: parsedData.skills || currentProfile?.skills || [],
+      skills: pickNonEmpty(parsedData.skills, currentProfile?.skills),
       certifications: currentProfile?.certifications || [],
       resume: {
         fileName,
@@ -365,7 +393,9 @@ async function handleParseResume(
       success: true,
       data: {
         parsedData,
-        rawText
+        rawText,
+        parseMethod,
+        llmError
       }
     };
   } catch (error) {
