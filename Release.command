@@ -32,9 +32,35 @@ fi
 
 git fetch origin --tags
 
+latest_tag="$(git tag --list 'v*' --sort=-version:refname | head -n 1)"
+
 default_tag="${TAG_NAME:-}"
 if [[ -z "$default_tag" ]]; then
-  read -r -p "请输入发布版本号（例如 v1.0.1）: " default_tag
+  if [[ -z "$latest_tag" ]]; then
+    default_tag="v1.0.0"
+  else
+    version_core="${latest_tag#v}"
+    IFS='.' read -r major minor patch extra <<< "$version_core"
+    major="${major:-1}"
+    minor="${minor:-0}"
+    patch="${patch:-0}"
+
+    if [[ -n "${extra:-}" ]]; then
+      echo "[错误] 最新标签 $latest_tag 不是标准递增版本号，请手动设置 TAG_NAME 后再发布。"
+      read -n 1 -s -r -p "按任意键退出..."
+      echo
+      exit 1
+    fi
+
+    if [[ ! "$major" =~ ^[0-9]+$ || ! "$minor" =~ ^[0-9]+$ || ! "$patch" =~ ^[0-9]+$ ]]; then
+      echo "[错误] 最新标签 $latest_tag 不是纯数字版本号，请手动设置 TAG_NAME 后再发布。"
+      read -n 1 -s -r -p "按任意键退出..."
+      echo
+      exit 1
+    fi
+
+    default_tag="v${major}.${minor}.$((patch + 1))"
+  fi
 fi
 
 tag_name="$(printf '%s' "$default_tag" | tr -d '[:space:]')"
@@ -61,6 +87,11 @@ if git rev-parse "$tag_name" >/dev/null 2>&1; then
 fi
 
 echo
+if [[ -n "$latest_tag" ]]; then
+  echo "当前最新版本: $latest_tag"
+else
+  echo "当前未发现已有版本标签。"
+fi
 echo "即将发布版本: $tag_name"
 echo "这会触发 GitHub Actions 自动构建扩展压缩包并上传到 Release。"
 

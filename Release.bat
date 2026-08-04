@@ -38,9 +38,37 @@ if errorlevel 1 (
   exit /b 1
 )
 
+set "latest_tag="
+for /f "delims=" %%i in ('git tag --list "v*" --sort=-version:refname') do (
+  if not defined latest_tag set "latest_tag=%%i"
+)
+
 set "tag_name=%TAG_NAME%"
 if "%tag_name%"=="" (
-  set /p "tag_name=请输入发布版本号（例如 v1.0.1）: "
+  if not defined latest_tag (
+    set "tag_name=v1.0.0"
+  ) else (
+    set "version_core=!latest_tag:~1!"
+    for /f "tokens=1-4 delims=." %%a in ("!version_core!") do (
+      set "major=%%a"
+      set "minor=%%b"
+      set "patch=%%c"
+      set "extra=%%d"
+    )
+
+    if not defined major set "major=1"
+    if not defined minor set "minor=0"
+    if not defined patch set "patch=0"
+
+    echo !major!| findstr /r "^[0-9][0-9]*$" >nul || goto :invalid_latest_tag
+    echo !minor!| findstr /r "^[0-9][0-9]*$" >nul || goto :invalid_latest_tag
+    echo !patch!| findstr /r "^[0-9][0-9]*$" >nul || goto :invalid_latest_tag
+
+    if defined extra goto :invalid_latest_tag
+
+    set /a next_patch=!patch!+1
+    set "tag_name=v!major!.!minor!.!next_patch!"
+  )
 )
 
 set "tag_name=%tag_name: =%"
@@ -65,6 +93,11 @@ if not errorlevel 1 (
 )
 
 echo.
+if defined latest_tag (
+  echo 当前最新版本: %latest_tag%
+) else (
+  echo 当前未发现已有版本标签。
+)
 echo 即将发布版本: %tag_name%
 echo 这会触发 GitHub Actions 自动构建扩展压缩包并上传到 Release。
 
@@ -109,3 +142,9 @@ echo 发布命令已提交。
 echo 请到 GitHub Actions 查看“发布扩展安装包”工作流进度。
 echo 完成后，压缩包会出现在对应版本的 GitHub Release 中。
 pause
+exit /b 0
+
+:invalid_latest_tag
+echo [错误] 最新标签 %latest_tag% 不是标准纯数字版本号，请手动设置 TAG_NAME 后再发布。
+pause
+exit /b 1
