@@ -1,0 +1,92 @@
+name: 发布扩展安装包
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: '发布版本号，例如 v1.0.1'
+        required: true
+      release_name:
+        description: 'Release 标题，可留空'
+        required: false
+      make_latest:
+        description: '是否标记为最新版本'
+        required: false
+        default: 'true'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 运行测试
+        run: npm test
+
+      - name: 构建并打包扩展
+        run: npm run package:extension
+
+      - name: 生成发布信息
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TAG_NAME="${{ github.event.inputs.tag_name }}"
+            RELEASE_NAME="${{ github.event.inputs.release_name }}"
+            MAKE_LATEST="${{ github.event.inputs.make_latest }}"
+          else
+            TAG_NAME="${GITHUB_REF_NAME}"
+            RELEASE_NAME=""
+            MAKE_LATEST="true"
+          fi
+
+          if [[ -z "${RELEASE_NAME}" ]]; then
+            RELEASE_NAME="秋招网申助手 ${TAG_NAME}"
+          fi
+
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "make_latest=${MAKE_LATEST}" >> "$GITHUB_OUTPUT"
+
+      - name: 为手动触发创建标签
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "${{ steps.meta.outputs.tag_name }}" >/dev/null 2>&1; then
+            echo "标签已存在：${{ steps.meta.outputs.tag_name }}"
+          else
+            git tag "${{ steps.meta.outputs.tag_name }}"
+            git push origin "${{ steps.meta.outputs.tag_name }}"
+          fi
+
+      - name: 创建 GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: ${{ steps.meta.outputs.release_name }}
+          generate_release_notes: true
+          make_latest: ${{ steps.meta.outputs.make_latest }}
+          files: |
+            release/job-application-helper-extension.zip

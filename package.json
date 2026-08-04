@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/post-build.js",
+    "package:extension": "npm run build && node scripts/package-extension.js",
     "lint": "oxlint",
     "test": "node --test src/shared/backup-sync.test.ts",
     "preview": "vite preview"
