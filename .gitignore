@@ -12,6 +12,9 @@ dist
 release
 dist-ssr
 *.local
+mock-resume-samples
+mock-resume-samples-zh
+mock-resume-samples-v2
 
 # Editor directories and files
 .vscode/*

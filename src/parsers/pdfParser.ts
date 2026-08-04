@@ -2,11 +2,14 @@ export async function parsePDF(base64Data: string): Promise<string> {
   try {
     console.log('[PDF Parser] Starting PDF parsing...');
 
-    // 动态导入 pdfjs-dist
-    const pdfjsLib = await import('pdfjs-dist');
-    console.log('[PDF Parser] PDF.js loaded, version:', pdfjsLib.version);
-
     const hasDOM = typeof window !== 'undefined' && typeof document !== 'undefined';
+    const runtimeGetUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL
+      ? chrome.runtime.getURL.bind(chrome.runtime)
+      : null;
+    const pdfjsLib = hasDOM
+      ? await import('pdfjs-dist')
+      : await import('pdfjs-dist/legacy/build/pdf.mjs');
+    console.log('[PDF Parser] PDF.js loaded, version:', pdfjsLib.version);
 
     // 在扩展环境且存在 DOM 时使用打包的 worker 文件
     if (hasDOM && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
@@ -18,6 +21,18 @@ export async function parsePDF(base64Data: string): Promise<string> {
     } else {
       console.log('[PDF Parser] No DOM detected, parsing PDF without worker');
     }
+
+    const toNodeResourcePath = (relativePath: string) => {
+      const url = new URL(relativePath, import.meta.url);
+      return decodeURIComponent(url.pathname);
+    };
+
+    const cMapUrl = runtimeGetUrl
+      ? runtimeGetUrl('cmaps/')
+      : (!hasDOM ? toNodeResourcePath('../../node_modules/pdfjs-dist/cmaps/') : undefined);
+    const standardFontDataUrl = runtimeGetUrl
+      ? runtimeGetUrl('standard_fonts/')
+      : (!hasDOM ? toNodeResourcePath('../../node_modules/pdfjs-dist/standard_fonts/') : undefined);
 
     // 移除 base64 前缀
     const base64String = base64Data.includes(',')
@@ -37,6 +52,8 @@ export async function parsePDF(base64Data: string): Promise<string> {
     console.log('[PDF Parser] Loading PDF document...');
     const documentInit = {
       data: bytes,
+      ...(cMapUrl ? { cMapUrl, cMapPacked: true } : {}),
+      ...(standardFontDataUrl ? { standardFontDataUrl } : {}),
       ...(hasDOM ? {} : { disableWorker: true }),
     } as any;
     const pdf = await pdfjsLib.getDocument(documentInit).promise;

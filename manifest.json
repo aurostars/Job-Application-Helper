@@ -46,7 +46,7 @@
   "options_page": "src/options/index.html",
   "web_accessible_resources": [
     {
-      "resources": ["icons/*", "pdf.worker.min.js"],
+      "resources": ["icons/*", "pdf.worker.min.js", "cmaps/*", "standard_fonts/*"],
       "matches": ["<all_urls>"]
     }
   ]
