@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { MessageService } from '../shared/message';
-import type { UserProfile, PersonalInfo, CustomInformation } from '../shared/types';
+import type {
+  UserProfile,
+  PersonalInfo,
+  CustomInformation,
+  ParsedResumeData,
+} from '../shared/types';
 import { AISettings } from './AISettings';
 import { EducationSection } from './EducationSection';
 import { ExperienceSection } from './ExperienceSection';
 import { DataSyncSettings } from './DataSyncSettings';
 import { parsePDF } from '../parsers/pdfParser';
+import { parseDOCX } from '../parsers/docxParser';
 
 /** MIME 类型到扩展名的兜底映射，用于文件名缺少扩展名的情况 */
 const MIME_TO_EXT: Record<string, string> = {
@@ -32,6 +38,47 @@ function resolveFileType(file: File): string {
   return MIME_TO_EXT[file.type] || ext;
 }
 
+/**
+ * 汇总本次实际提取到的内容，用于上传后的提示。
+ * 解析请求成功不代表提取到了字段，提示需要如实反映结果。
+ */
+function summarizeParsed(data: ParsedResumeData | undefined): string {
+  if (!data) return '';
+
+  const personalCount = Object.values(data.personal || {})
+    .filter(value => typeof value === 'string' && value.trim()).length;
+
+  const parts: string[] = [];
+  if (personalCount > 0) parts.push(`个人信息 ${personalCount} 项`);
+  if (data.education?.length) parts.push(`教育经历 ${data.education.length} 条`);
+  if (data.experience?.length) parts.push(`工作/实习经历 ${data.experience.length} 条`);
+  if (data.projects?.length) parts.push(`项目经历 ${data.projects.length} 条`);
+  if (data.skills?.length) parts.push(`技能 ${data.skills.length} 项`);
+
+  return parts.join('、');
+}
+
+/**
+ * 在设置页（有 DOM）先把需要 DOM 的格式解析成文本。
+ * PDF.js 需要 DOM；mammoth 的依赖 bluebird 在 service worker 中挑选调度器时
+ * 可能触碰 document 而报 ReferenceError，故一并在此处理。
+ * 其余纯文本格式返回 undefined，交由后台解析。
+ */
+async function preParseInPage(
+  fileType: string,
+  base64Data: string
+): Promise<string | undefined> {
+  switch (fileType) {
+    case 'pdf':
+      return await parsePDF(base64Data);
+    case 'doc':
+    case 'docx':
+      return await parseDOCX(base64Data);
+    default:
+      return undefined;
+  }
+}
+
 function resizeAutoGrowTextarea(element: HTMLTextAreaElement): void {
   const singleLineHeight = 39;
   element.style.height = 'auto';
@@ -54,7 +101,7 @@ function App() {
   const [dataRevision, setDataRevision] = useState(0);
   const [parsingResume, setParsingResume] = useState(false);
   const [resumeNotice, setResumeNotice] = useState<{
-    type: 'info' | 'success' | 'error';
+    type: 'info' | 'success' | 'warning' | 'error';
     text: string;
   } | null>(null);
   const [saveNotice, setSaveNotice] = useState<{
@@ -193,9 +240,9 @@ function App() {
       const fileType = resolveFileType(file);
 
       try {
-        const rawText = fileType === 'pdf'
-          ? await parsePDF(base64Data)
-          : undefined;
+        // PDF 与 DOCX 依赖的库需要 DOM，在设置页（有 DOM）先解析出文本，
+        // 后台就无需再触碰这些库
+        const rawText = await preParseInPage(fileType, base64Data);
 
         const response = await MessageService.sendMessage({
           type: 'PARSE_RESUME',
@@ -208,8 +255,35 @@ function App() {
         });
 
         if (response.success && response.data) {
+          const result = response.data as {
+            parsedData?: ParsedResumeData;
+            parseMethod?: 'structured' | 'llm' | 'regex';
+            llmError?: string;
+          };
+          const summary = summarizeParsed(result.parsedData);
           setSaveNotice({ type: 'success', text: '简历解析成功，请检查并确认提取的信息' });
-          setResumeNotice({ type: 'success', text: `「${file.name}」解析完成，已更新到当前资料。` });
+
+          if (result.llmError) {
+            // AI 解析失败会静默回退到正则，必须让用户知道，否则会误以为 AI 生效了
+            setResumeNotice({
+              type: 'warning',
+              text: `「${file.name}」AI 解析失败，已改用本地规则解析${summary ? `，提取 ${summary}` : '，未提取到字段'}。`
+                + `失败原因：${result.llmError}`,
+            });
+          } else if (summary) {
+            const prefix = result.parseMethod === 'llm' ? 'AI 解析完成' : '解析完成';
+            setResumeNotice({
+              type: 'success',
+              text: `「${file.name}」${prefix}，已提取 ${summary}，请核对。`,
+            });
+          } else {
+            setResumeNotice({
+              type: 'warning',
+              text: `「${file.name}」已读取，但没能提取到可用字段。`
+                + '若为扫描版 PDF（图片型）需改用文字版；也可在设置中配置 AI 服务提升提取效果。',
+            });
+          }
+
           loadProfile();
         } else {
           const message = response.error || '未知错误';

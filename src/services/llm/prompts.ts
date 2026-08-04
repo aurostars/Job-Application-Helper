@@ -70,7 +70,7 @@ export function buildResumeParsingPrompt(rawText: string): { system: string; use
   "personal": {
     "name": "姓名",
     "gender": "性别",
-    "birthDate": "出生日期 (YYYY-MM-DD)",
+    "birthDate": "出生日期 (YYYY-MM，只有年份时填 YYYY)",
     "phone": "手机号",
     "email": "邮箱",
     "wechat": "微信号",
@@ -118,9 +118,15 @@ export function buildResumeParsingPrompt(rawText: string): { system: string; use
 
 规则：
 - 只输出JSON，不要其他文字
-- 缺失的字段填空字符串""
-- 日期统一为YYYY-MM格式
-- 教育/工作经历按时间倒序排列`;
+- 缺失的字段填空字符串""，不要猜测或编造
+- 日期统一为YYYY-MM格式；结束时间为在读/在职时填"至今"
+- 教育/工作经历按时间倒序排列
+- 原文来自PDF/Word提取，同一句话可能被硬换行拆到多行，请自行拼回完整句子
+- 个人信息常无标签并排写在开头（如"中共党员 2002年5月"），需按取值本身判断字段归属
+- 学校行常把学校、专业、学历、起止时间写在一行，需拆分到对应字段，不要整行填进school
+- 公司名不一定含"公司/集团"（如"科大讯飞""美团快驴""BOSS直聘"），按机构名识别
+- description保留该条经历下的完整工作内容，不要压缩成一句话
+- 简历中确实没有的信息（如未写性别）必须留空，不得由姓名或其他字段推断`;
 
   const user = `请解析以下简历：
 

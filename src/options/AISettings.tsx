@@ -194,6 +194,12 @@ export function AISettings({ dataRevision = 0 }: AISettingsProps) {
         <datalist id="model-suggestions">
           {preset.models.map(m => <option key={m} value={m} />)}
         </datalist>
+
+        <p className="settings-hint">
+          推荐使用非推理模型。推理模型的思考内容会占用输出额度，
+          容易在思考阶段耗尽额度而返回空内容，届时会自动改用本地规则解析。
+        </p>
+
         {modelEdited && preset.defaultModel && config.model.trim() !== preset.defaultModel ? (
           <p className="settings-hint">
             已使用自定义模型，切换服务商时不会被覆盖。
@@ -203,7 +209,16 @@ export function AISettings({ dataRevision = 0 }: AISettingsProps) {
           </p>
         ) : preset.models.length > 0 && (
           <p className="settings-hint">
-            常用模型：{preset.models.join('、')}。模型更新较快，如提示模型不存在请到官方文档核对名称。
+            非推理模型：{preset.models.join('、')}。模型更新较快，如提示模型不存在请到官方文档核对名称。
+          </p>
+        )}
+
+        {preset.reasoningOnly && (
+          <p className="settings-hint">
+            {preset.label} 目前在售的
+            {(preset.reasoningModels ?? []).join('、')} 均为推理模型，
+            建议改用 DeepSeek（deepseek-chat）、GLM（glm-4-flash）
+            或 Qwen（qwen-plus）等非推理模型。
           </p>
         )}
       </div>

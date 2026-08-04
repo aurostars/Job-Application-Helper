@@ -1,5 +1,18 @@
 import type { LLMConfig, ChatMessage, LLMResponse } from './types';
-import { LLMProvider } from './types';
+import { LLMProvider, DEFAULT_MAX_TOKENS, MAX_TOKENS_CEILING } from './types.ts';
+
+/** 输出被 max_tokens 截断且正文为空时抛出，供上层决定是否加大额度重试 */
+export class TruncatedEmptyOutputError extends Error {
+  attemptedMaxTokens: number;
+
+  constructor(attemptedMaxTokens: number) {
+    super(
+      `模型在 max_tokens=${attemptedMaxTokens} 下于思考阶段耗尽额度，未产出正文。`,
+    );
+    this.name = 'TruncatedEmptyOutputError';
+    this.attemptedMaxTokens = attemptedMaxTokens;
+  }
+}
 
 export class LLMService {
   private config: LLMConfig;
@@ -8,11 +21,40 @@ export class LLMService {
     this.config = config;
   }
 
+  /**
+   * 发起对话。
+   *
+   * 输出额度从 DEFAULT_MAX_TOKENS 起算。若模型因思考耗尽额度而返回空正文，
+   * 自动加倍重试，直到 MAX_TOKENS_CEILING 为止——推理模型的思考长度无法预估，
+   * 界面上也不再暴露该设置，所以由这里自动试探。
+   * 到上限仍失败即放弃，由调用方回退到本地规则解析。
+   */
   async chat(messages: ChatMessage[], signal?: AbortSignal): Promise<LLMResponse> {
-    if (this.config.provider === LLMProvider.CLAUDE) {
-      return this.callClaude(messages, signal);
+    // 旧配置里可能存有更小的 maxTokens，不能让它把额度压到默认值以下
+    let budget = Math.min(
+      Math.max(this.config.maxTokens ?? 0, DEFAULT_MAX_TOKENS),
+      MAX_TOKENS_CEILING,
+    );
+
+    for (;;) {
+      try {
+        return this.config.provider === LLMProvider.CLAUDE
+          ? await this.callClaude(messages, signal, budget)
+          : await this.callOpenAICompatible(messages, signal, budget);
+      } catch (error) {
+        if (!(error instanceof TruncatedEmptyOutputError)) throw error;
+
+        if (budget >= MAX_TOKENS_CEILING) {
+          throw new Error(
+            `模型已在 max_tokens 提升至上限 ${MAX_TOKENS_CEILING} 后仍未产出正文，`
+            + '已停止使用 AI 解析。该模型的思考过程过长，请在「AI 模型设置」中改用非推理模型。',
+          );
+        }
+
+        budget = Math.min(budget * 2, MAX_TOKENS_CEILING);
+        console.warn(`Output truncated with empty content, retrying with max_tokens=${budget}`);
+      }
     }
-    return this.callOpenAICompatible(messages, signal);
   }
 
   /** 去掉用户粘贴地址时常见的结尾斜杠，避免出现 //chat/completions */
@@ -28,7 +70,11 @@ export class LLMService {
     return this.trimmedBaseUrl().replace(/\/v1$/, '');
   }
 
-  private async callOpenAICompatible(messages: ChatMessage[], signal?: AbortSignal): Promise<LLMResponse> {
+  private async callOpenAICompatible(
+    messages: ChatMessage[],
+    signal: AbortSignal | undefined,
+    maxTokens: number,
+  ): Promise<LLMResponse> {
     const response = await fetch(`${this.trimmedBaseUrl()}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -39,7 +85,7 @@ export class LLMService {
         model: this.config.model,
         messages,
         temperature: this.config.temperature ?? 0.7,
-        max_tokens: this.config.maxTokens ?? 4096,
+        max_tokens: maxTokens,
       }),
       signal,
     });
@@ -60,10 +106,10 @@ export class LLMService {
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || content.trim() === '') {
       // 推理模型（如 mimo-v2.5-pro、deepseek-reasoner）可能因 max_tokens
-      // 在思考阶段就耗尽，导致正文为空
+      // 在思考阶段就耗尽，导致正文为空。抛专用错误让上层加大额度重试。
       const finishReason = data.choices?.[0]?.finish_reason;
       if (finishReason === 'length') {
-        throw new Error('模型输出被 max_tokens 截断，正文为空。推理模型请调大 max_tokens 或改用非推理模型。');
+        throw new TruncatedEmptyOutputError(maxTokens);
       }
       throw new Error('LLM 返回内容为空，请检查模型名称是否正确');
     }
@@ -77,7 +123,11 @@ export class LLMService {
     };
   }
 
-  private async callClaude(messages: ChatMessage[], signal?: AbortSignal): Promise<LLMResponse> {
+  private async callClaude(
+    messages: ChatMessage[],
+    signal: AbortSignal | undefined,
+    maxTokens: number,
+  ): Promise<LLMResponse> {
     const systemMsg = messages.find(m => m.role === 'system')?.content || '';
     const nonSystemMessages = messages
       .filter(m => m.role !== 'system')
@@ -96,7 +146,7 @@ export class LLMService {
         model: this.config.model,
         system: systemMsg,
         messages: nonSystemMessages,
-        max_tokens: this.config.maxTokens ?? 2048,
+        max_tokens: maxTokens,
         temperature: this.config.temperature ?? 0.7,
       }),
       signal,
@@ -118,8 +168,16 @@ export class LLMService {
       );
     }
 
-    const content = data.content?.[0]?.text;
+    // Claude 开启 thinking 时首个 block 可能是 thinking，需取文本 block
+    const content = Array.isArray(data.content)
+      ? data.content.find((block: any) => block?.type === 'text')?.text
+        ?? data.content[0]?.text
+      : undefined;
+
     if (typeof content !== 'string' || content.trim() === '') {
+      if (data.stop_reason === 'max_tokens') {
+        throw new TruncatedEmptyOutputError(maxTokens);
+      }
       throw new Error(
         `Claude 返回内容为空或格式异常，请检查模型名称是否正确。${extractErrorMessage(raw)}`,
       );

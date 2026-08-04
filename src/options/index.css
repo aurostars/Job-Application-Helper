@@ -382,6 +382,12 @@ textarea:focus {
   background: #ecfdf5;
 }
 
+.resume-notice.warning {
+  border-color: #fde68a;
+  color: #92400e;
+  background: #fffbeb;
+}
+
 .resume-notice.error {
   border-color: #fecaca;
   color: #b91c1c;
