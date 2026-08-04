@@ -1,0 +1,21 @@
+# 统一行尾，避免依赖各人的 core.autocrlf 设置
+* text=auto eol=lf
+
+# cmd.exe 对行尾敏感：LF 的批处理在 goto/标签跳转等场景可能出错，
+# 必须始终以 CRLF 检出
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# macOS 双击运行的脚本必须是 LF，CRLF 会让 shebang 变成
+# "#!/usr/bin/env bash\r" 而报 bad interpreter
+*.command text eol=lf
+*.sh text eol=lf
+
+# 二进制文件不做行尾转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
+*.pdf binary
+*.docx binary
+*.ttf binary
