@@ -184,3 +184,37 @@ test('Claude 因 max_tokens 截断时同样自动重试', async () => {
     stub.restore();
   }
 });
+
+test('openai 兼容接口会把图片消息序列化为 image_url block', async () => {
+  let requestBody = '';
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (_url, init) => {
+    requestBody = String(init?.body);
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: '{"ok":true}' } }],
+    }), { status: 200 });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const llm = new LLMService({
+      provider: LLMProvider.OPENAI,
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'gpt-4o',
+    });
+
+    await llm.chat([{
+      role: 'user',
+      content: [
+        { type: 'text', text: '看图并返回 JSON' },
+        { type: 'image', mimeType: 'image/png', data: 'ZmFrZQ==' },
+      ],
+    }]);
+
+    assert.match(requestBody, /image_url/);
+    assert.match(requestBody, /data:image\/png;base64,ZmFrZQ==/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
