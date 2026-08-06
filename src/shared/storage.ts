@@ -1,4 +1,6 @@
 import type {
+  ApplicationRecord,
+  ApplicationSyncConfig,
   BackupData,
   SettingsData,
   SyncMetadata,
@@ -14,6 +16,8 @@ export const STORAGE_KEYS = {
   LLM_CONFIG: 'llmConfig',
   WEBDAV_CONFIG: 'webdavConfig',
   SYNC_METADATA: 'syncMetadata',
+  APPLICATION_RECORDS: 'applicationRecords',
+  APPLICATION_SYNC_CONFIG: 'applicationSyncConfig',
 } as const;
 
 export function normalizeUserProfile(profile: UserProfile): UserProfile {
@@ -142,17 +146,43 @@ export class StorageService {
     await chrome.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
   }
 
+  static async getApplicationRecords(): Promise<ApplicationRecord[]> {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.APPLICATION_RECORDS);
+    return (result[STORAGE_KEYS.APPLICATION_RECORDS] as ApplicationRecord[] | undefined) || [];
+  }
+
+  static async saveApplicationRecords(records: ApplicationRecord[]): Promise<void> {
+    await chrome.storage.local.set({ [STORAGE_KEYS.APPLICATION_RECORDS]: records });
+  }
+
+  static async getApplicationSyncConfig(): Promise<ApplicationSyncConfig | null> {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.APPLICATION_SYNC_CONFIG);
+    return (result[STORAGE_KEYS.APPLICATION_SYNC_CONFIG] as ApplicationSyncConfig | undefined) || null;
+  }
+
+  static async saveApplicationSyncConfig(config: ApplicationSyncConfig): Promise<void> {
+    await chrome.storage.local.set({ [STORAGE_KEYS.APPLICATION_SYNC_CONFIG]: config });
+  }
+
   static async getBackupData(): Promise<BackupData> {
     const result = await chrome.storage.local.get([
       STORAGE_KEYS.USER_PROFILE,
       STORAGE_KEYS.LLM_CONFIG,
       STORAGE_KEYS.SETTINGS,
+      STORAGE_KEYS.APPLICATION_RECORDS,
+      STORAGE_KEYS.APPLICATION_SYNC_CONFIG,
     ]);
     const profile = (result[STORAGE_KEYS.USER_PROFILE] as UserProfile | undefined) || null;
     return {
       userProfile: profile ? normalizeUserProfile(profile) : null,
       llmConfig: (result[STORAGE_KEYS.LLM_CONFIG] as LLMConfig | undefined) || null,
       settings: (result[STORAGE_KEYS.SETTINGS] as SettingsData | undefined) || null,
+      applicationRecords: Object.hasOwn(result, STORAGE_KEYS.APPLICATION_RECORDS)
+        ? ((result[STORAGE_KEYS.APPLICATION_RECORDS] as ApplicationRecord[] | undefined) || [])
+        : undefined,
+      applicationSyncConfig: Object.hasOwn(result, STORAGE_KEYS.APPLICATION_SYNC_CONFIG)
+        ? ((result[STORAGE_KEYS.APPLICATION_SYNC_CONFIG] as ApplicationSyncConfig | undefined) || null)
+        : undefined,
     };
   }
 
@@ -168,6 +198,26 @@ export class StorageService {
     for (const [key, value] of entries) {
       if (value === null) removals.push(key);
       else values[key] = value;
+    }
+
+    if (Object.hasOwn(data, 'applicationRecords')) {
+      if (data.applicationRecords === undefined) {
+        // 兼容旧备份：未携带该字段时不覆盖本地投递记录
+      } else if (data.applicationRecords === null) {
+        removals.push(STORAGE_KEYS.APPLICATION_RECORDS);
+      } else {
+        values[STORAGE_KEYS.APPLICATION_RECORDS] = data.applicationRecords;
+      }
+    }
+
+    if (Object.hasOwn(data, 'applicationSyncConfig')) {
+      if (data.applicationSyncConfig === undefined) {
+        // 兼容旧备份：未携带该字段时不覆盖本地同步配置
+      } else if (data.applicationSyncConfig === null) {
+        removals.push(STORAGE_KEYS.APPLICATION_SYNC_CONFIG);
+      } else {
+        values[STORAGE_KEYS.APPLICATION_SYNC_CONFIG] = data.applicationSyncConfig;
+      }
     }
 
     // webdavConfig 仅在本地导入时恢复，同步下载不会覆盖本地凭据。

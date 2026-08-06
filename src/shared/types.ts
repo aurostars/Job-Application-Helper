@@ -85,10 +85,94 @@ import type { LLMConfig } from '../services/llm/types';
 
 export type SettingsData = Record<string, unknown>;
 
+export type ApplicationStatus =
+  | '待投递'
+  | '已投递'
+  | '笔试'
+  | '面试中'
+  | '已结束'
+  | '已拒绝'
+  | '已录用';
+
+export interface ApplicationEvent {
+  id: string;
+  type: 'status_change' | 'note_added' | 'created' | 'sync';
+  createdAt: string;
+  summary: string;
+  detail?: string;
+}
+
+export interface FeishuRecordSyncState {
+  recordId?: string;
+  lastSyncedAt?: string;
+  status: 'idle' | 'pending' | 'syncing' | 'synced' | 'error';
+  lastError?: string;
+}
+
+export interface ApplicationRecord {
+  id: string;
+  siteName: string;
+  siteUrl: string;
+  siteHost: string;
+  companyName: string;
+  jobTitle: string;
+  city?: string;
+  department?: string;
+  salaryText?: string;
+  status: ApplicationStatus;
+  appliedAt?: string;
+  deadline?: string;
+  notes?: string;
+  resumeName?: string;
+  contactName?: string;
+  contactInfo?: string;
+  createdAt: string;
+  updatedAt: string;
+  events: ApplicationEvent[];
+  feishuSync?: FeishuRecordSyncState;
+  deletedAt?: string | null;
+}
+
+export interface CreateApplicationRecordInput {
+  siteName: string;
+  siteUrl: string;
+  siteHost: string;
+  companyName: string;
+  jobTitle: string;
+  city?: string;
+  department?: string;
+  salaryText?: string;
+  appliedAt?: string;
+  deadline?: string;
+  notes?: string;
+  resumeName?: string;
+  contactName?: string;
+  contactInfo?: string;
+}
+
+export interface UpdateApplicationRecordInput extends Partial<CreateApplicationRecordInput> {
+  status?: ApplicationStatus;
+}
+
+export type ApplicationSyncDestination = 'none' | 'webdav' | 'feishu' | 'both';
+
+export interface ApplicationSyncConfig {
+  destination: ApplicationSyncDestination;
+  autoSync: boolean;
+  webdavCsvFileName: string;
+  feishu?: {
+    appToken: string;
+    tableId: string;
+    viewName?: string;
+  };
+}
+
 export interface BackupData {
   userProfile: UserProfile | null;
   llmConfig: LLMConfig | null;
   settings: SettingsData | null;
+  applicationRecords?: ApplicationRecord[];
+  applicationSyncConfig?: ApplicationSyncConfig | null;
 }
 
 export interface BackupDocumentV1 {
@@ -194,6 +278,14 @@ export interface FocusedFieldWriteResult {
 export type Message =
   | { type: 'GET_USER_PROFILE'; payload?: null }
   | { type: 'SAVE_USER_PROFILE'; payload: UserProfile }
+  | { type: 'GET_APPLICATION_RECORDS'; payload?: { includeDeleted?: boolean } }
+  | { type: 'SAVE_APPLICATION_RECORD'; payload: CreateApplicationRecordInput }
+  | { type: 'UPDATE_APPLICATION_RECORD'; payload: { id: string; patch: UpdateApplicationRecordInput } }
+  | { type: 'DELETE_APPLICATION_RECORD'; payload: { id: string } }
+  | { type: 'GET_APPLICATION_SYNC_CONFIG'; payload?: null }
+  | { type: 'SAVE_APPLICATION_SYNC_CONFIG'; payload: ApplicationSyncConfig }
+  | { type: 'SYNC_APPLICATIONS_NOW'; payload?: null }
+  | { type: 'CAPTURE_APPLICATION_FROM_PAGE'; payload?: { tabId?: number } }
   | { type: 'PARSE_RESUME'; payload: { file: string; fileType: string; fileName: string; rawText?: string } }
   | { type: 'FILL_FORM'; payload?: null }
   | { type: 'DETECT_FIELDS'; payload?: null }

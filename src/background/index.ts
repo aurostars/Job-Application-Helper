@@ -1,41 +1,54 @@
 import type {
+  ApplicationRecord,
+  ApplicationSyncConfig,
+  CreateApplicationRecordInput,
   FocusedFieldWriteResult,
   Message,
   MessageResponse,
   UserProfile,
   ParsedResumeData,
+  UpdateApplicationRecordInput,
   WebDAVConfig,
-} from '../shared/types';
-import { StorageService } from '../shared/storage';
+} from '../shared/types.ts';
+import { StorageService } from '../shared/storage.ts';
 import {
   createBackupDocument,
   createBackupSummary,
   parseAndValidateBackup,
   serializeBackup,
-} from '../shared/backup';
+} from '../shared/backup.ts';
 import {
   enqueueSync,
   enqueueSyncAndWait,
   forceDownloadRemote,
   forceUploadLocal,
   resolveConflict,
-} from '../shared/sync';
+} from '../shared/sync.ts';
 import {
   normalizeWebDAVServerUrl,
   testConnection as testWebDAVConnection,
   validateWebDAVUrl,
-} from '../services/webdav';
-import { parseResume, isStructuredType, parseStructuredResume } from '../parsers';
-import { NLPHelper } from '../utils/nlpHelper';
-import { LLMService } from '../services/llm/llmService';
+} from '../services/webdav.ts';
+import { parseResume, isStructuredType, parseStructuredResume } from '../parsers/index.ts';
+import { NLPHelper } from '../utils/nlpHelper.ts';
+import { LLMService } from '../services/llm/llmService.ts';
 import {
   buildAnswerGenerationPrompt,
   buildResumeParsingPrompt,
   buildFieldMatchingPrompt,
   buildSectionFillPrompt,
-} from '../services/llm/prompts';
-import type { AIFillSectionPayload } from '../services/llm/prompts';
-import type { LLMConfig } from '../services/llm/types';
+} from '../services/llm/prompts.ts';
+import type { AIFillSectionPayload } from '../services/llm/prompts.ts';
+import type { LLMConfig } from '../services/llm/types.ts';
+import {
+  createApplicationRecord,
+  filterDeletedRecords,
+  markRecordPendingSync,
+  markRecordSyncResult,
+  softDeleteApplicationRecord,
+  updateApplicationRecord,
+} from '../services/application-tracking/recordService.ts';
+import { syncApplicationDestinations } from '../services/application-tracking/syncCoordinator.ts';
 
 // Background Service Worker 入口
 console.log('Background service worker started');
@@ -73,7 +86,7 @@ chrome.runtime.onMessage.addListener(
 );
 
 // 处理消息
-async function handleMessage(
+export async function handleMessage(
   message: Message,
   _sender: chrome.runtime.MessageSender
 ): Promise<MessageResponse> {
@@ -83,6 +96,30 @@ async function handleMessage(
 
     case 'SAVE_USER_PROFILE':
       return await handleSaveUserProfile(message.payload);
+
+    case 'GET_APPLICATION_RECORDS':
+      return await handleGetApplicationRecords(message.payload?.includeDeleted);
+
+    case 'SAVE_APPLICATION_RECORD':
+      return await handleSaveApplicationRecord(message.payload);
+
+    case 'UPDATE_APPLICATION_RECORD':
+      return await handleUpdateApplicationRecord(message.payload.id, message.payload.patch);
+
+    case 'DELETE_APPLICATION_RECORD':
+      return await handleDeleteApplicationRecord(message.payload.id);
+
+    case 'GET_APPLICATION_SYNC_CONFIG':
+      return { success: true, data: await StorageService.getApplicationSyncConfig() };
+
+    case 'SAVE_APPLICATION_SYNC_CONFIG':
+      return await handleSaveApplicationSyncConfig(message.payload);
+
+    case 'SYNC_APPLICATIONS_NOW':
+      return { success: true, data: await runApplicationSync({ manual: true }) };
+
+    case 'CAPTURE_APPLICATION_FROM_PAGE':
+      return handleCaptureApplicationFromPage();
 
     case 'PARSE_RESUME':
       return await handleParseResume(
@@ -161,6 +198,161 @@ async function handleMessage(
         error: 'Unknown message type'
       };
   }
+}
+
+function normalizeApplicationSyncConfig(config: ApplicationSyncConfig): ApplicationSyncConfig {
+  return {
+    destination: config.destination,
+    autoSync: Boolean(config.autoSync),
+    webdavCsvFileName: config.webdavCsvFileName.trim() || 'application-records.csv',
+    feishu: config.feishu
+      ? {
+          appToken: config.feishu.appToken.trim(),
+          tableId: config.feishu.tableId.trim(),
+          viewName: config.feishu.viewName?.trim() || undefined,
+        }
+      : undefined,
+  };
+}
+
+async function runApplicationSync(
+  options: { manual?: boolean } = {},
+): Promise<{
+  triggered: boolean;
+  result?: Awaited<ReturnType<typeof syncApplicationDestinations>>;
+  error?: string;
+}> {
+  const [records, syncConfig, webdavConfig] = await Promise.all([
+    StorageService.getApplicationRecords(),
+    StorageService.getApplicationSyncConfig(),
+    StorageService.getWebDAVConfig(),
+  ]);
+
+  if (!syncConfig || syncConfig.destination === 'none') {
+    return { triggered: false };
+  }
+  if (!options.manual && !syncConfig.autoSync) {
+    return { triggered: false };
+  }
+
+  const result = await syncApplicationDestinations({ records, syncConfig, webdavConfig });
+  if (result.feishu?.records?.length) {
+    const recordResultMap = new Map(result.feishu.records.map((item) => [item.localId, item]));
+    const updatedRecords = records.map((record) => {
+      const recordResult = recordResultMap.get(record.id);
+      if (!recordResult) return record;
+      return markRecordSyncResult(record, {
+        status: recordResult.status,
+        remoteRecordId: recordResult.remoteRecordId,
+        error: recordResult.error,
+      });
+    });
+    await StorageService.saveApplicationRecords(updatedRecords);
+  }
+
+  const errors = [result.webdav?.error, result.feishu?.error].filter(Boolean);
+  return {
+    triggered: true,
+    result,
+    error: errors.length > 0 ? errors.join('；') : undefined,
+  };
+}
+
+async function handleGetApplicationRecords(includeDeleted = false): Promise<MessageResponse<ApplicationRecord[]>> {
+  const records = await StorageService.getApplicationRecords();
+  return {
+    success: true,
+    data: filterDeletedRecords(records, includeDeleted),
+  };
+}
+
+async function handleSaveApplicationRecord(
+  input: CreateApplicationRecordInput,
+): Promise<MessageResponse> {
+  const [records, syncConfig] = await Promise.all([
+    StorageService.getApplicationRecords(),
+    StorageService.getApplicationSyncConfig(),
+  ]);
+
+  const createdRecord = markRecordPendingSync(
+    createApplicationRecord(input),
+    syncConfig?.destination || 'none',
+  );
+
+  await StorageService.saveApplicationRecords([createdRecord, ...records]);
+  const sync = await runApplicationSync();
+  const latestRecords = await StorageService.getApplicationRecords();
+  const latestRecord = latestRecords.find((record) => record.id === createdRecord.id) || createdRecord;
+
+  return {
+    success: true,
+    data: {
+      record: latestRecord,
+      sync,
+    },
+  };
+}
+
+async function handleUpdateApplicationRecord(
+  id: string,
+  patch: UpdateApplicationRecordInput,
+): Promise<MessageResponse> {
+  const [records, syncConfig] = await Promise.all([
+    StorageService.getApplicationRecords(),
+    StorageService.getApplicationSyncConfig(),
+  ]);
+  const currentRecord = records.find((record) => record.id === id);
+  if (!currentRecord) {
+    return { success: false, error: '投递记录不存在' };
+  }
+
+  const nextRecord = markRecordPendingSync(
+    updateApplicationRecord(currentRecord, patch),
+    syncConfig?.destination || 'none',
+  );
+  await StorageService.saveApplicationRecords(
+    records.map((record) => (record.id === id ? nextRecord : record)),
+  );
+  const sync = await runApplicationSync();
+  const latestRecords = await StorageService.getApplicationRecords();
+  const latestRecord = latestRecords.find((record) => record.id === id) || nextRecord;
+  return { success: true, data: { record: latestRecord, sync } };
+}
+
+async function handleDeleteApplicationRecord(id: string): Promise<MessageResponse> {
+  const [records, syncConfig] = await Promise.all([
+    StorageService.getApplicationRecords(),
+    StorageService.getApplicationSyncConfig(),
+  ]);
+  const currentRecord = records.find((record) => record.id === id);
+  if (!currentRecord) {
+    return { success: false, error: '投递记录不存在' };
+  }
+
+  const nextRecord = markRecordPendingSync(
+    softDeleteApplicationRecord(currentRecord),
+    syncConfig?.destination || 'none',
+  );
+  await StorageService.saveApplicationRecords(
+    records.map((record) => (record.id === id ? nextRecord : record)),
+  );
+  const sync = await runApplicationSync();
+  return { success: true, data: { record: nextRecord, sync } };
+}
+
+async function handleSaveApplicationSyncConfig(
+  config: ApplicationSyncConfig,
+): Promise<MessageResponse<ApplicationSyncConfig>> {
+  const normalized = normalizeApplicationSyncConfig(config);
+  await StorageService.saveApplicationSyncConfig(normalized);
+  return { success: true, data: normalized };
+}
+
+function handleCaptureApplicationFromPage(): MessageResponse {
+  return {
+    success: false,
+    error: 'CAPTURE_APPLICATION_FROM_PAGE 已接入最小消息分发边界，尚未实现页面抓取',
+  };
 }
 
 async function handleWriteFocusedField(
