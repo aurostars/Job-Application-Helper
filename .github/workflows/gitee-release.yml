@@ -143,12 +143,46 @@ jobs:
           ATTACH_FILES_JSON_FILE="$(mktemp)"
 
           QUERY_CODE="$(curl -sS -o "${RESPONSE_FILE}" -w "%{http_code}" "${API_BASE}/releases/tags/${TAG_NAME}?access_token=${GITEE_TOKEN}")"
+          SHOULD_CREATE_RELEASE="false"
 
           if [[ "${QUERY_CODE}" == "200" ]]; then
-            cp "${RESPONSE_FILE}" "${RELEASE_JSON_FILE}"
-            echo "release_exists=true" >> "$GITHUB_OUTPUT"
-            echo "检测到已存在的 Gitee Release：${TAG_NAME}"
+            RELEASE_LOOKUP_STATUS="$(python3 - "${RESPONSE_FILE}" <<'PY'
+          import json
+          import sys
+
+          json_path = sys.argv[1]
+
+          with open(json_path, "r", encoding="utf-8") as fh:
+              payload = json.load(fh)
+
+          if isinstance(payload, dict) and payload.get("id"):
+              print("existing")
+          elif payload is None:
+              print("empty")
+          else:
+              print(f"unexpected:{type(payload).__name__}")
+          PY
+            )"
+
+            if [[ "${RELEASE_LOOKUP_STATUS}" == "existing" ]]; then
+              cp "${RESPONSE_FILE}" "${RELEASE_JSON_FILE}"
+              echo "release_exists=true" >> "$GITHUB_OUTPUT"
+              echo "检测到已存在的 Gitee Release：${TAG_NAME}"
+            else
+              SHOULD_CREATE_RELEASE="true"
+              echo "按标签查询 Gitee Release 返回了 HTTP 200，但响应不是可复用的 release 对象：${RELEASE_LOOKUP_STATUS}"
+              cat "${RESPONSE_FILE}"
+              echo "将继续尝试创建 Gitee Release：${TAG_NAME}"
+            fi
           elif [[ "${QUERY_CODE}" == "404" ]]; then
+            SHOULD_CREATE_RELEASE="true"
+          else
+            echo "查询 Gitee Release 失败，HTTP ${QUERY_CODE}"
+            cat "${RESPONSE_FILE}"
+            exit 1
+          fi
+
+          if [[ "${SHOULD_CREATE_RELEASE}" == "true" ]]; then
             CREATE_CODE="$(curl -sS -o "${RESPONSE_FILE}" -w "%{http_code}" -X POST \
               --data-urlencode "access_token=${GITEE_TOKEN}" \
               --data-urlencode "tag_name=${TAG_NAME}" \
@@ -165,10 +199,6 @@ jobs:
             cp "${RESPONSE_FILE}" "${RELEASE_JSON_FILE}"
             echo "release_exists=false" >> "$GITHUB_OUTPUT"
             echo "已创建 Gitee Release：${TAG_NAME}"
-          else
-            echo "查询 Gitee Release 失败，HTTP ${QUERY_CODE}"
-            cat "${RESPONSE_FILE}"
-            exit 1
           fi
 
           RELEASE_ID="$(python3 - "${RELEASE_JSON_FILE}" <<'PY'
@@ -179,6 +209,9 @@ jobs:
 
           with open(json_path, "r", encoding="utf-8") as fh:
               payload = json.load(fh)
+
+          if not isinstance(payload, dict):
+              raise SystemExit(f"release 详情响应不是 JSON 对象，而是 {type(payload).__name__}")
 
           release_id = payload.get("id") or ""
 
