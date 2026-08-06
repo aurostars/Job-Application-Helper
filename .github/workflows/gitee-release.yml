@@ -1,0 +1,314 @@
+name: Gitee Release
+
+'on':
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: '要在 Gitee 发布且已存在的标签，例如 v1.0.1'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 检查 Gitee 发布配置
+        id: config
+        shell: bash
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          if [[ -z "${GITEE_USERNAME}" || -z "${GITEE_TOKEN}" || -z "${GITEE_REPO}" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "missing_config=true" >> "$GITHUB_OUTPUT"
+            echo "未配置 GITEE_USERNAME / GITEE_TOKEN / GITEE_REPO，跳过后续 Gitee Release 骨架步骤。"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "missing_config=false" >> "$GITHUB_OUTPUT"
+            echo "Gitee Release 配置检查通过。"
+          fi
+
+      - name: 生成标签元信息
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TAG_NAME="${{ github.event.inputs.tag_name }}"
+          else
+            TAG_NAME="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ ! "${TAG_NAME}" =~ ^v.+ ]]; then
+            echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "tag_ref=refs/tags/${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "release_name=秋招网申助手 ${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "valid_tag=false" >> "$GITHUB_OUTPUT"
+            echo "validation_message=手动触发时必须提供以 v 开头的标签名。" >> "$GITHUB_OUTPUT"
+            echo "手动触发时必须提供以 v 开头的标签名。"
+          else
+            echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "tag_ref=refs/tags/${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "release_name=秋招网申助手 ${TAG_NAME}" >> "$GITHUB_OUTPUT"
+            echo "valid_tag=true" >> "$GITHUB_OUTPUT"
+            echo "validation_message=ok" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 输出跳过说明
+        if: steps.config.outputs.ready != 'true'
+        run: |
+          echo "由于 Gitee 发布配置缺失，本次只保留 workflow 可见性，不执行后续发布动作。"
+
+      - name: 标签输入校验失败
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag != 'true'
+        shell: bash
+        run: |
+          echo "${{ steps.meta.outputs.validation_message }}"
+          exit 1
+
+      - name: 校验目标标签并切换到标签代码
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="${{ steps.meta.outputs.tag_name }}"
+
+          git fetch origin --tags
+
+          if ! git rev-parse "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
+            echo "未找到目标标签：${TAG_NAME}"
+            echo "手动触发时必须填写仓库中已存在且以 v 开头的标签名。"
+            exit 1
+          fi
+
+          TARGET_COMMIT="$(git rev-list -n 1 "refs/tags/${TAG_NAME}")"
+          git checkout --detach "refs/tags/${TAG_NAME}"
+          echo "已切换到标签 ${TAG_NAME} 对应代码：${TARGET_COMMIT}"
+
+      - name: 设置 Node.js
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: 安装依赖
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        run: npm ci
+
+      - name: 运行测试
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        run: npm test
+
+      - name: 构建并打包扩展
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        run: npm run package:extension
+
+      - name: 配置 Gitee 远端
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        shell: bash
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git remote get-url gitee >/dev/null 2>&1; then
+            git remote remove gitee
+          fi
+
+          git remote add gitee "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
+          echo "已配置 Gitee 远端：${GITEE_REPO}"
+
+      - name: 同步标签到 Gitee
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        shell: bash
+        run: |
+          git push gitee "refs/tags/${{ steps.meta.outputs.tag_name }}:refs/tags/${{ steps.meta.outputs.tag_name }}"
+          echo "已同步标签到 Gitee：${{ steps.meta.outputs.tag_name }}"
+
+      - name: 检查构建产物
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        shell: bash
+        run: |
+          test -f release/job-application-helper-extension.zip
+          echo "已确认产物存在：release/job-application-helper-extension.zip"
+
+      - name: 创建或查询 Gitee Release
+        id: release
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          set -euo pipefail
+
+          API_BASE="https://gitee.com/api/v5/repos/${GITEE_REPO}"
+          TAG_NAME="${{ steps.meta.outputs.tag_name }}"
+          RELEASE_NAME="${{ steps.meta.outputs.release_name }}"
+          ARTIFACT_NAME="job-application-helper-extension.zip"
+          RESPONSE_FILE="$(mktemp)"
+          RELEASE_JSON_FILE="$(mktemp)"
+          ATTACH_FILES_JSON_FILE="$(mktemp)"
+
+          QUERY_CODE="$(curl -sS -o "${RESPONSE_FILE}" -w "%{http_code}" "${API_BASE}/releases/tags/${TAG_NAME}?access_token=${GITEE_TOKEN}")"
+
+          if [[ "${QUERY_CODE}" == "200" ]]; then
+            cp "${RESPONSE_FILE}" "${RELEASE_JSON_FILE}"
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+            echo "检测到已存在的 Gitee Release：${TAG_NAME}"
+          elif [[ "${QUERY_CODE}" == "404" ]]; then
+            CREATE_CODE="$(curl -sS -o "${RESPONSE_FILE}" -w "%{http_code}" -X POST \
+              --data-urlencode "access_token=${GITEE_TOKEN}" \
+              --data-urlencode "tag_name=${TAG_NAME}" \
+              --data-urlencode "name=${RELEASE_NAME}" \
+              --data-urlencode "body=Automated release for ${TAG_NAME}" \
+              "${API_BASE}/releases")"
+
+            if [[ "${CREATE_CODE}" != "200" && "${CREATE_CODE}" != "201" ]]; then
+              echo "创建 Gitee Release 失败，HTTP ${CREATE_CODE}"
+              cat "${RESPONSE_FILE}"
+              exit 1
+            fi
+
+            cp "${RESPONSE_FILE}" "${RELEASE_JSON_FILE}"
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
+            echo "已创建 Gitee Release：${TAG_NAME}"
+          else
+            echo "查询 Gitee Release 失败，HTTP ${QUERY_CODE}"
+            cat "${RESPONSE_FILE}"
+            exit 1
+          fi
+
+          RELEASE_ID="$(python3 - "${RELEASE_JSON_FILE}" <<'PY'
+          import json
+          import sys
+          
+          json_path = sys.argv[1]
+
+          with open(json_path, "r", encoding="utf-8") as fh:
+              payload = json.load(fh)
+
+          release_id = payload.get("id") or ""
+
+          if not release_id:
+              raise SystemExit("release 详情响应中缺少 id 字段")
+
+          print(release_id)
+          PY
+          )"
+
+          if [[ -z "${RELEASE_ID}" ]]; then
+            echo "未能从 Gitee Release 响应中解析出 release_id。"
+            cat "${RESPONSE_FILE}"
+            exit 1
+          fi
+
+          ATTACH_FILES_CODE="$(curl -sS -o "${ATTACH_FILES_JSON_FILE}" -w "%{http_code}" "${API_BASE}/releases/${RELEASE_ID}/attach_files?access_token=${GITEE_TOKEN}")"
+
+          if [[ "${ATTACH_FILES_CODE}" != "200" ]]; then
+            echo "查询 Gitee Release 附件列表失败，HTTP ${ATTACH_FILES_CODE}"
+            cat "${ATTACH_FILES_JSON_FILE}"
+            exit 1
+          fi
+
+          HAS_ASSET="$(python3 - "${ARTIFACT_NAME}" "${ATTACH_FILES_JSON_FILE}" <<'PY'
+          import json
+          import sys
+
+          artifact_name = sys.argv[1]
+          json_path = sys.argv[2]
+
+          with open(json_path, "r", encoding="utf-8") as fh:
+              payload = json.load(fh)
+
+          if not isinstance(payload, list):
+              raise SystemExit("attach_files 响应不是 JSON 数组")
+
+          has_asset = any(
+              isinstance(item, dict)
+              and (item.get("name") or item.get("filename") or "") == artifact_name
+              for item in payload
+          )
+
+          print("true" if has_asset else "false")
+          PY
+          )"
+
+          echo "release_id=${RELEASE_ID}" >> "$GITHUB_OUTPUT"
+          echo "has_asset=${HAS_ASSET}" >> "$GITHUB_OUTPUT"
+          echo "release_id=${RELEASE_ID}"
+          echo "has_asset=${HAS_ASSET}"
+
+      - name: 上传 Gitee Release 附件
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        shell: bash
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          set -euo pipefail
+
+          API_BASE="https://gitee.com/api/v5/repos/${GITEE_REPO}"
+          RELEASE_ID="${{ steps.release.outputs.release_id }}"
+          ASSET_PATH="release/job-application-helper-extension.zip"
+          ASSET_NAME="$(basename "${ASSET_PATH}")"
+
+          if [[ "${{ steps.release.outputs.has_asset }}" == "true" ]]; then
+            echo "Gitee Release 已存在同名附件：${ASSET_NAME}，跳过重复上传。"
+            exit 0
+          fi
+
+          RESPONSE_FILE="$(mktemp)"
+          UPLOAD_CODE="$(curl -sS -o "${RESPONSE_FILE}" -w "%{http_code}" -X POST \
+            -F "access_token=${GITEE_TOKEN}" \
+            -F "file=@${ASSET_PATH}" \
+            "${API_BASE}/releases/${RELEASE_ID}/attach_files")"
+
+          if [[ "${UPLOAD_CODE}" != "200" && "${UPLOAD_CODE}" != "201" ]]; then
+            echo "上传 Gitee Release 附件失败，HTTP ${UPLOAD_CODE}"
+            cat "${RESPONSE_FILE}"
+            exit 1
+          fi
+
+          UPLOADED_NAME="$(python3 - "${RESPONSE_FILE}" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], "r", encoding="utf-8") as fh:
+              payload = json.load(fh)
+
+          print(payload.get("name") or payload.get("filename") or "")
+          PY
+          )"
+
+          echo "已上传 Gitee Release 附件：${UPLOADED_NAME:-${ASSET_NAME}}"
+
+      - name: 输出 Task 3 摘要
+        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
+        run: |
+          echo "已完成 Task 3 所需的 Gitee Release 创建/查询与附件上传逻辑。"
+          echo "tag_name=${{ steps.meta.outputs.tag_name }}"
+          echo "tag_ref=${{ steps.meta.outputs.tag_ref }}"
+          echo "release_name=${{ steps.meta.outputs.release_name }}"
+          echo "release_id=${{ steps.release.outputs.release_id }}"
+          echo "release_exists=${{ steps.release.outputs.release_exists }}"
+          echo "artifact_already_exists=${{ steps.release.outputs.has_asset }}"
+          echo "artifact_path=release/job-application-helper-extension.zip"
+          echo "本次 workflow 会在配置检查与 tag 校验通过后创建/查询 Release，并在需要时上传 zip 附件。"
