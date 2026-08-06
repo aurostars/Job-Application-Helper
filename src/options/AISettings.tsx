@@ -235,7 +235,7 @@ export function AISettings({ dataRevision = 0 }: AISettingsProps) {
           </label>
           <p className="settings-hint">
             仅当你的自定义 OpenAI 兼容服务实际支持图片输入时再开启。
-            未开启时，视觉优先框选补填会主动阻断，避免把图片请求发到不兼容模型。
+            当前版本先用它声明该服务是否具备视觉输入能力，后续接入视觉优先框选补填时会据此决定是否允许发送图片请求。
           </p>
         </div>
       )}
