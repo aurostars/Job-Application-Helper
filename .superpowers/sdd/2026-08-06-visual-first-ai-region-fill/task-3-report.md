@@ -1,0 +1,155 @@
+# Task 3 报告：视觉补填 Prompt 与结果校验
+
+## 任务范围
+
+根据 `task-3-brief.md`，本次仅实现以下内容：
+
+- 视觉补填 prompt 构建
+- 模型返回结果解析
+- 结果映射校验
+- 相关测试与覆盖验证
+
+明确不做：
+
+- background handler 接线
+- 截图流程接线
+- 聚焦字段写入链路改造
+
+## TDD 执行过程
+
+### 1. 先写失败测试
+
+新增 `src/services/llm/visualRegionFill.test.ts`，先覆盖三类行为：
+
+1. prompt 中必须包含图片 block，且系统规则声明“只能输出已有 controlId”
+2. `validateVisualRegionMappings()` 会过滤：
+   - 不存在的 `controlId`
+   - 空字符串 value
+   - 不在控件 `options` 内的 value
+3. `parseVisualRegionFillResponse()` 能从模型返回的 JSON 中提取 `mappings`
+
+### 2. 验证测试先失败
+
+执行：
+
+```bash
+node --experimental-strip-types --test src/services/llm/visualRegionFill.test.ts
+```
+
+首次失败符合预期，报错为：
+
+```text
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '.../src/services/llm/visualRegionFill.ts'
+```
+
+说明测试确实先于实现存在。
+
+### 3. 最小实现
+
+按 brief 实现了两部分：
+
+#### `src/services/llm/prompts.ts`
+
+新增 `buildVisualRegionFillPrompt(payload, profile)`：
+
+- system prompt 明确声明截图是主语义输入
+- 明确声明 `controls` 是唯一允许输出目标
+- 明确声明只能输出已有 `controlId`
+- 明确声明只能复用候选人已有资料值
+- 明确声明 `options` 必须精确匹配
+- 返回 `ChatContentPart[]`，其中包含：
+  - 文本 block
+  - 图片 block
+
+#### `src/services/llm/visualRegionFill.ts`
+
+新增：
+
+- `parseVisualRegionFillResponse(raw)`
+- `validateVisualRegionMappings(result, payload, profile)`
+
+其中校验逻辑包括：
+
+- `controlId` 必须存在于 `payload.controls`
+- `value` 必须为非空字符串
+- `matchedProfilePath` 指向的 profile 原始值必须与 `value` 完全一致
+- 若控件存在 `options`，则 `value` 必须命中候选项
+
+## 类型兼容处理
+
+当前 worktree 中的 `src/shared/types.ts` 尚未体现 brief 所依赖的视觉补填结构；为避免实现与测试脱节，我补充了以下类型定义，并保留旧字段的兼容性：
+
+- `VisualRegionImagePayload`
+- `VisualRegionControlRect`
+- `VisualRegionControlCandidate`
+- `VisualRegionFillMapping`
+- 扩展后的 `VisualRegionFillPayload`
+- 扩展后的 `VisualRegionFillResult`
+
+兼容策略：
+
+- 保留原有 `value/confidence/model`
+- 新增 `mappings`
+- 新增字段均采用向后兼容方式扩展，没有接入 background / screenshot 流程
+
+## 变更文件
+
+- `src/services/llm/prompts.ts`
+- `src/services/llm/visualRegionFill.ts`
+- `src/services/llm/visualRegionFill.test.ts`
+- `src/shared/types.ts`
+
+## 测试记录
+
+### 新增测试单测
+
+执行：
+
+```bash
+node --experimental-strip-types --test src/services/llm/visualRegionFill.test.ts
+```
+
+结果：
+
+- 3/3 通过
+
+### 现有测试回归
+
+执行：
+
+```bash
+npm test
+```
+
+结果：
+
+- 88/88 通过
+
+### 覆盖测试
+
+执行：
+
+```bash
+node --experimental-strip-types --experimental-test-coverage --test \
+  src/services/llm/visualRegionFill.test.ts \
+  src/services/llm/visionCapabilities.test.ts \
+  src/services/llm/llm-service.test.ts
+```
+
+结果摘要：
+
+- 20/20 通过
+- `src/services/llm/visualRegionFill.ts` 覆盖率：
+  - line: 97.33%
+  - branch: 72.73%
+  - funcs: 100.00%
+
+## 风险与顾虑
+
+1. `src/shared/types.ts` 中视觉补填契约在当前 worktree 里并未完整落地，本次为支撑 Task 3 做了兼容扩展；后续若 Task 1 的正式契约再落地，需要再对齐一次，避免重复定义或字段命名漂移。
+2. 当前只完成 prompt、parse、validate 三段逻辑，尚未接到 background handler 与截图采集链路，因此端到端行为仍未验证。
+3. `parseVisualRegionFillResponse()` 目前只保证 JSON 结构可解析并抽取合法 mapping，对“模型输出多个同 controlId 候选”的冲突裁决未做额外策略，后续若接入真实调用链，可再根据产品规则决定去重/优先级策略。
+
+## 结论
+
+Task 3 范围内的 prompt 构建、结果解析、结果校验已完成，并通过新增单测、回归测试和覆盖测试验证。

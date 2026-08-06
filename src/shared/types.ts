@@ -286,7 +286,43 @@ export interface VisualRegionSelectionRect {
   height: number;
 }
 
+export interface VisualRegionImagePayload {
+  base64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
+export interface VisualRegionControlRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface VisualRegionControlCandidate {
+  controlId: string;
+  tagName: string;
+  label: string;
+  name: string;
+  placeholder: string;
+  options: string[];
+  rect: VisualRegionControlRect;
+  contextText: string;
+}
+
+export interface VisualRegionFillMapping {
+  controlId: string;
+  fieldMeaning: string;
+  matchedProfilePath: string;
+  value: string;
+}
+
 export interface VisualRegionFillPayload {
+  requestId?: string;
+  domain?: string;
+  image?: VisualRegionImagePayload;
+  controls?: VisualRegionControlCandidate[];
   imageDataUrl?: string;
   region: VisualRegionSelectionRect;
   instruction?: string;
@@ -295,9 +331,10 @@ export interface VisualRegionFillPayload {
 }
 
 export interface VisualRegionFillResult {
-  value: string;
+  value?: string;
   confidence?: number;
   model?: string;
+  mappings?: VisualRegionFillMapping[];
 }
 
 // 消息类型定义

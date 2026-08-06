@@ -1,4 +1,5 @@
-import type { UserProfile } from '../../shared/types';
+import type { UserProfile, VisualRegionFillPayload } from '../../shared/types';
+import type { ChatContentPart } from './types.ts';
 
 export interface GenerateAnswerPayload {
   questionText: string;
@@ -187,6 +188,46 @@ ${JSON.stringify(payload.fields, null, 2)}
 请返回字段 index 到填写值的 JSON 映射。`;
 
   return { system, user };
+}
+
+export function buildVisualRegionFillPrompt(
+  payload: VisualRegionFillPayload,
+  profile: UserProfile
+): { system: string; userParts: ChatContentPart[] } {
+  const system = `你是网申视觉补填助手。截图是主语义输入，controls 是唯一允许输出目标。
+
+严格规则：
+- 只能输出已有 controlId，且每条映射必须对应传入的 controls
+- 只能使用候选人资料中已经存在的原始值，不得猜测、改写、归纳或编造
+- 如果控件提供 options，value 必须与某个选项完全一致
+- 无法确定时不要猜，直接返回空字符串
+- 只返回严格 JSON，格式为 {"mappings":[{"controlId":"","fieldMeaning":"","matchedProfilePath":"","value":""}]}
+- 不要输出解释、Markdown、代码块或额外字段`;
+
+  const sections = [
+    payload.requestId ? `requestId: ${payload.requestId}` : '',
+    payload.domain ? `网站：${payload.domain}` : '',
+    payload.instruction ? `补充指令：${payload.instruction}` : '',
+    payload.targetLabel ? `目标标签：${payload.targetLabel}` : '',
+    payload.pageContext ? `页面上下文：${payload.pageContext}` : '',
+    `候选人资料：\n${JSON.stringify(profile, null, 2)}`,
+    `控件清单（只允许输出这些 controlId）：\n${JSON.stringify(payload.controls ?? [], null, 2)}`,
+    '请结合截图与控件清单，返回 JSON：{"mappings":[...]}。',
+  ].filter(Boolean);
+
+  const userParts: ChatContentPart[] = [
+    { type: 'text', text: sections.join('\n\n') },
+  ];
+
+  if (payload.image) {
+    userParts.push({
+      type: 'image',
+      mimeType: payload.image.mimeType,
+      data: payload.image.base64,
+    });
+  }
+
+  return { system, userParts };
 }
 
 function buildProfileSummary(profile: UserProfile): string {
