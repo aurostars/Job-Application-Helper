@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { MessageService } from '../shared/message';
 import type { Message, MessageResponse, UserProfile } from '../shared/types';
+import { buildSidepanelUrl, type SidepanelView } from '../sidepanel/navigation';
 
 function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [filling, setFilling] = useState(false);
   const [startingAIRegion, setStartingAIRegion] = useState(false);
-  const [openingSidePanel, setOpeningSidePanel] = useState(false);
+  const [openingView, setOpeningView] = useState<SidepanelView | null>(null);
   const [detectedFields, setDetectedFields] = useState(0);
 
   useEffect(() => {
@@ -110,18 +111,18 @@ function App() {
     }
   };
 
-  const handleOpenSidePanel = async () => {
-    setOpeningSidePanel(true);
+  const handleOpenSidePanel = async (view: SidepanelView) => {
+    setOpeningView(view);
     try {
-      await openSidePanelFallbackWindow();
+      await openSidePanelFallbackWindow(view);
       window.close();
     } catch (error) {
       alert(error instanceof Error ? error.message : '打开资料窗口失败');
-      setOpeningSidePanel(false);
+      setOpeningView(null);
     }
   };
 
-  const openSidePanelFallbackWindow = async () => {
+  const openSidePanelFallbackWindow = async (view: SidepanelView) => {
     const currentWindow = await chrome.windows.getCurrent();
     const width = 420;
     const height = Math.max(640, Math.min(900, currentWindow.height || 800));
@@ -131,9 +132,10 @@ function App() {
     const top = currentWindow.top;
 
     await chrome.windows.create({
-      url: chrome.runtime.getURL(
-        `src/sidepanel/index.html?targetWindowId=${currentWindow.id ?? ''}`
-      ),
+      url: chrome.runtime.getURL(buildSidepanelUrl({
+        targetWindowId: currentWindow.id,
+        view,
+      })),
       type: 'popup',
       width,
       height,
@@ -239,11 +241,19 @@ function App() {
 
         <div className="popup-actions">
           <button
-            onClick={handleOpenSidePanel}
-            disabled={openingSidePanel}
+            onClick={() => void handleOpenSidePanel('profile')}
+            disabled={openingView !== null}
             className="button button-secondary"
           >
-            {openingSidePanel ? '正在打开浮窗...' : '打开信息浮窗'}
+            {openingView === 'profile' ? '正在打开浮窗...' : '打开信息浮窗'}
+          </button>
+
+          <button
+            onClick={() => void handleOpenSidePanel('applications')}
+            disabled={openingView !== null}
+            className="button button-secondary"
+          >
+            {openingView === 'applications' ? '正在打开记录...' : '打开投递记录'}
           </button>
 
           <button
