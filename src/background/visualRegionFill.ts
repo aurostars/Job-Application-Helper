@@ -6,6 +6,7 @@ import {
   validateVisualRegionMappings,
 } from '../services/llm/visualRegionFill.ts';
 import { supportsVisionInput } from '../services/llm/visionCapabilities.ts';
+import type { VisionSupportReason } from '../services/llm/visionCapabilities.ts';
 import { StorageService } from '../shared/storage.ts';
 import type {
   MessageResponse,
@@ -64,7 +65,7 @@ export async function handleVisualRegionFill(
     if (!vision.supported) {
       return {
         success: false,
-        error: `当前模型不支持图片输入${vision.reason ? `：${vision.reason}` : ''}`,
+        error: mapVisionSupportError(vision.reason),
       };
     }
 
@@ -139,4 +140,16 @@ function normalizeRect(selectionRect: DOMRectLike) {
     width: Math.max(1, Math.round(selectionRect.width)),
     height: Math.max(1, Math.round(selectionRect.height)),
   };
+}
+
+function mapVisionSupportError(reason: VisionSupportReason): string {
+  switch (reason) {
+    case 'NO_MODEL':
+      return '请先在设置中选择支持图片输入的模型';
+    case 'CUSTOM_VISION_DISABLED':
+      return '当前自定义模型未开启视觉输入，请在设置中启用视觉能力后重试';
+    case 'PROVIDER_UNSUPPORTED':
+    default:
+      return '当前模型不支持图片输入，请在设置中切换到支持视觉输入的模型';
+  }
 }

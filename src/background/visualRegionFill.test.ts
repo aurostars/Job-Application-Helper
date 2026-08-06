@@ -136,7 +136,14 @@ test('视觉模型未开启时 handler 直接返回可读错误', async () => {
   } as never);
 
   assert.equal(response.success, false);
-  assert.match(response.error || '', /不支持图片输入/);
+  assert.equal(
+    response.error,
+    '当前自定义模型未开启视觉输入，请在设置中启用视觉能力后重试',
+  );
+  assert.doesNotMatch(
+    response.error || '',
+    /NO_MODEL|PROVIDER_UNSUPPORTED|CUSTOM_VISION_DISABLED/,
+  );
 });
 
 test('captureVisibleRegion 调用截图与 offscreen 裁剪', async () => {

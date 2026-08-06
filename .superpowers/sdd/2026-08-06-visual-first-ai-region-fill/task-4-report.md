@@ -277,3 +277,92 @@ Task 4 已按 brief 完成：
 - background 路由已接入 `AI_FILL_VISUAL_REGION`
 - 未接 popup/content 入口
 - 已完成 TDD、相关覆盖测试与全量回归测试
+
+## Fix report（Task 4 单条评审意见）
+
+### 评审意见
+
+`src/background/visualRegionFill.ts` 在无视觉模型时返回的错误文案泄漏了内部 reason code（如 `NO_MODEL`、`PROVIDER_UNSUPPORTED`、`CUSTOM_VISION_DISABLED`），需要改为面向用户的中文提示，并补上能拦住该问题的最小测试。
+
+### 本次修复范围
+
+仅修改：
+
+- `src/background/visualRegionFill.ts`
+- `src/background/visualRegionFill.test.ts`
+
+明确未改：
+
+- popup/content 接线
+- `src/services/llm/llmService.ts` 的其他错误文案
+- Task 4 既有截图编排与 offscreen 流程
+
+### TDD 记录
+
+1. 先在 `src/background/visualRegionFill.test.ts` 增加断言，要求错误文案：
+   - 返回中文可读提示
+   - 不包含 `NO_MODEL|PROVIDER_UNSUPPORTED|CUSTOM_VISION_DISABLED`
+2. 执行最小验证：
+
+```bash
+node --experimental-strip-types --test src/background/visualRegionFill.test.ts
+```
+
+首次失败，失败原因为：
+
+```text
+AssertionError [ERR_ASSERTION]:
+'当前模型不支持图片输入：CUSTOM_VISION_DISABLED'
+```
+
+这说明测试成功拦住了内部 reason code 泄漏问题。
+
+### 修复实现
+
+在 `src/background/visualRegionFill.ts` 中新增 `mapVisionSupportError(reason)`，把内部 reason code 映射为中文提示：
+
+- `NO_MODEL` → `请先在设置中选择支持图片输入的模型`
+- `CUSTOM_VISION_DISABLED` → `当前自定义模型未开启视觉输入，请在设置中启用视觉能力后重试`
+- `PROVIDER_UNSUPPORTED` → `当前模型不支持图片输入，请在设置中切换到支持视觉输入的模型`
+
+并将原先直接拼接 `vision.reason` 的逻辑：
+
+```ts
+error: `当前模型不支持图片输入${vision.reason ? `：${vision.reason}` : ''}`,
+```
+
+替换为：
+
+```ts
+error: mapVisionSupportError(vision.reason),
+```
+
+### 最小验证结果
+
+执行：
+
+```bash
+node --experimental-strip-types --test src/background/visualRegionFill.test.ts
+```
+
+结果：
+
+- 3/3 通过
+
+其中新增拦截断言验证了：
+
+- 自定义模型未开启视觉能力时，返回明确中文提示
+- 返回文案不再包含内部 reason code
+
+### 提交
+
+本次修复提交信息：
+
+```bash
+fix: hide visual capability reason codes in background errors
+```
+
+### 顾虑
+
+1. 本次按评审要求只修了 background handler 对外返回文案；`src/services/llm/llmService.ts` 里仍存在内部 reason code 的异常拼接，但当前不在这条评审的修复范围内。
+2. 当前最小测试只锁定了 `CUSTOM_VISION_DISABLED` 这条路径；`NO_MODEL` 与 `PROVIDER_UNSUPPORTED` 的映射由同一 helper 覆盖，但未额外扩展更多用例，以保持修改最小。
