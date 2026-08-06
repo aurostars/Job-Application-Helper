@@ -139,11 +139,19 @@ jobs:
           RELEASE_NAME="${{ steps.meta.outputs.release_name }}"
           TARGET_COMMIT="$(git rev-list -n 1 "refs/tags/${TAG_NAME}")"
           ARTIFACT_NAME="job-application-helper-extension.zip"
+          CURL_RETRY_ARGS=(
+            --connect-timeout 15
+            --max-time 120
+            --retry 5
+            --retry-delay 5
+            --retry-all-errors
+            --retry-connrefused
+          )
           RESPONSE_FILE="$(mktemp)"
           RELEASE_JSON_FILE="$(mktemp)"
           ATTACH_FILES_JSON_FILE="$(mktemp)"
 
-          QUERY_CODE="$(curl -sS -o "${RESPONSE_FILE}" -w "%{http_code}" "${API_BASE}/releases/tags/${TAG_NAME}?access_token=${GITEE_TOKEN}")"
+          QUERY_CODE="$(curl -sS "${CURL_RETRY_ARGS[@]}" -o "${RESPONSE_FILE}" -w "%{http_code}" "${API_BASE}/releases/tags/${TAG_NAME}?access_token=${GITEE_TOKEN}")"
           SHOULD_CREATE_RELEASE="false"
 
           if [[ "${QUERY_CODE}" == "200" ]]; then
@@ -184,7 +192,7 @@ jobs:
           fi
 
           if [[ "${SHOULD_CREATE_RELEASE}" == "true" ]]; then
-            CREATE_CODE="$(curl -sS -o "${RESPONSE_FILE}" -w "%{http_code}" -X POST \
+            CREATE_CODE="$(curl -sS "${CURL_RETRY_ARGS[@]}" -o "${RESPONSE_FILE}" -w "%{http_code}" -X POST \
               --data-urlencode "access_token=${GITEE_TOKEN}" \
               --data-urlencode "tag_name=${TAG_NAME}" \
               --data-urlencode "target_commitish=${TARGET_COMMIT}" \
@@ -230,7 +238,7 @@ jobs:
             exit 1
           fi
 
-          ATTACH_FILES_CODE="$(curl -sS -o "${ATTACH_FILES_JSON_FILE}" -w "%{http_code}" "${API_BASE}/releases/${RELEASE_ID}/attach_files?access_token=${GITEE_TOKEN}")"
+          ATTACH_FILES_CODE="$(curl -sS "${CURL_RETRY_ARGS[@]}" -o "${ATTACH_FILES_JSON_FILE}" -w "%{http_code}" "${API_BASE}/releases/${RELEASE_ID}/attach_files?access_token=${GITEE_TOKEN}")"
 
           if [[ "${ATTACH_FILES_CODE}" != "200" ]]; then
             echo "查询 Gitee Release 附件列表失败，HTTP ${ATTACH_FILES_CODE}"
@@ -279,6 +287,14 @@ jobs:
           RELEASE_ID="${{ steps.release.outputs.release_id }}"
           ASSET_PATH="release/job-application-helper-extension.zip"
           ASSET_NAME="$(basename "${ASSET_PATH}")"
+          CURL_RETRY_ARGS=(
+            --connect-timeout 15
+            --max-time 120
+            --retry 5
+            --retry-delay 5
+            --retry-all-errors
+            --retry-connrefused
+          )
 
           if [[ "${{ steps.release.outputs.has_asset }}" == "true" ]]; then
             echo "Gitee Release 已存在同名附件：${ASSET_NAME}，跳过重复上传。"
@@ -286,7 +302,7 @@ jobs:
           fi
 
           RESPONSE_FILE="$(mktemp)"
-          UPLOAD_CODE="$(curl -sS -o "${RESPONSE_FILE}" -w "%{http_code}" -X POST \
+          UPLOAD_CODE="$(curl -sS "${CURL_RETRY_ARGS[@]}" -o "${RESPONSE_FILE}" -w "%{http_code}" -X POST \
             -F "access_token=${GITEE_TOKEN}" \
             -F "file=@${ASSET_PATH}" \
             "${API_BASE}/releases/${RELEASE_ID}/attach_files")"
