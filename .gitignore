@@ -15,6 +15,7 @@ dist-ssr
 mock-resume-samples
 mock-resume-samples-zh
 mock-resume-samples-v2
+.worktrees
 
 # Editor directories and files
 .vscode/*
