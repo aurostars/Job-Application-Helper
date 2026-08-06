@@ -9,6 +9,7 @@ import type {
   UpdateApplicationRecordInput,
   UserProfile,
   VisualRegionFillPayload,
+  VisualRegionFillRequestPayload,
   WebDAVConfig,
 } from '../shared/types.ts';
 import { StorageService } from '../shared/storage.ts';
@@ -364,10 +365,10 @@ function handleCaptureApplicationFromPage(): MessageResponse {
 }
 
 async function handleVisualRegionFillRequest(
-  payload: VisualRegionFillPayload,
+  payload: VisualRegionFillPayload | VisualRegionFillRequestPayload,
   sender: chrome.runtime.MessageSender,
 ): Promise<MessageResponse> {
-  if (payload.image) {
+  if (isVisualRegionFillPayload(payload)) {
     return handleVisualRegionFill(payload);
   }
 
@@ -377,7 +378,14 @@ async function handleVisualRegionFillRequest(
   }
 
   const image = await captureVisibleRegion(windowId, payload.region);
-  return handleVisualRegionFill({ ...payload, image });
+  const strictPayload: VisualRegionFillPayload = { ...payload, image };
+  return handleVisualRegionFill(strictPayload);
+}
+
+function isVisualRegionFillPayload(
+  payload: VisualRegionFillPayload | VisualRegionFillRequestPayload,
+): payload is VisualRegionFillPayload {
+  return 'image' in payload && Boolean(payload.image?.base64 && payload.image?.mimeType);
 }
 
 async function handleWriteFocusedField(

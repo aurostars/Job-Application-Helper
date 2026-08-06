@@ -318,10 +318,9 @@ export interface VisualRegionFillMapping {
   value: string;
 }
 
-export interface VisualRegionFillPayload {
+interface VisualRegionFillPayloadBase {
   requestId?: string;
   domain?: string;
-  image?: VisualRegionImagePayload;
   controls: VisualRegionControlCandidate[];
   imageDataUrl?: string;
   region: VisualRegionSelectionRect;
@@ -329,6 +328,12 @@ export interface VisualRegionFillPayload {
   pageContext?: string;
   targetLabel?: string;
 }
+
+export interface VisualRegionFillPayload extends VisualRegionFillPayloadBase {
+  image: VisualRegionImagePayload;
+}
+
+export interface VisualRegionFillRequestPayload extends VisualRegionFillPayloadBase {}
 
 export interface VisualRegionFillResult {
   value: string;
@@ -356,7 +361,7 @@ export type Message =
   | { type: 'FILL_FORM'; payload?: null }
   | { type: 'DETECT_FIELDS'; payload?: null }
   | { type: 'START_AI_REGION_FILL'; payload?: VisualRegionControlPayload | null }
-  | { type: 'AI_FILL_VISUAL_REGION'; payload: VisualRegionFillPayload }
+  | { type: 'AI_FILL_VISUAL_REGION'; payload: VisualRegionFillPayload | VisualRegionFillRequestPayload }
   | { type: 'CROP_IMAGE_OFFSCREEN'; payload: { imageDataUrl: string; selectionRect: VisualRegionSelectionRect } }
   | { type: 'WRITE_FOCUSED_FIELD'; payload: { tabId: number; value: string } }
   | { type: 'APPLY_FOCUSED_FIELD'; payload: VisualRegionFillResult }

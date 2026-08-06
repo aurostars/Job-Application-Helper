@@ -5,6 +5,7 @@ import type {
   VisualRegionFillMapping,
   VisualRegionFillMappingResult,
   VisualRegionFillPayload,
+  VisualRegionFillRequestPayload,
   VisualRegionSelectionRect,
 } from '../shared/types.ts';
 
@@ -335,7 +336,7 @@ async function runVisualRegionFill(
         controls,
         region: normalizeRuntimeSelectionRect(input.selectionRect),
         pageContext: normalizeContextText(input.pageContext),
-      } as VisualRegionFillPayload,
+      } satisfies VisualRegionFillRequestPayload,
     });
 
     if (cancelled) return;

@@ -340,3 +340,82 @@ Task 5 已按 brief 完成：
 - background 已在真实入口上补齐截图编排
 - 新测试已纳入 `npm test`
 - 已完成 TDD、覆盖测试、全量测试、build 与 lint 验证
+
+---
+
+## Fix Report（评审意见：保持主链路严格有图类型）
+
+### 修复范围
+
+只修这一条评审意见，不扩展到其他重构：
+
+- 恢复 `VisualRegionFillPayload.image` 为必填，保证进入视觉推理主链路的 payload 始终是严格有图类型
+- 新增仅供 content -> background 入口使用的 `VisualRegionFillRequestPayload`
+- 由 background 在无图入口补齐截图后，再组装成严格 `VisualRegionFillPayload` 传给 `handleVisualRegionFill()`
+
+### TDD 记录
+
+先新增类型断言文件 `src/shared/visualRegionFillPayload.typecheck.ts`，约束两件事：
+
+1. content/background 无图入口必须使用单独的 `VisualRegionFillRequestPayload`
+2. `VisualRegionFillPayload` 不能接受缺图对象
+
+先执行：
+
+```bash
+npx tsc -b
+```
+
+失败结果符合预期：
+
+```text
+error TS2724: "./types.ts" has no exported member named 'VisualRegionFillRequestPayload'
+error TS2578: Unused '@ts-expect-error' directive.
+```
+
+随后做最小实现，并重新执行验证直到通过。
+
+### 实际修改
+
+1. `src/shared/types.ts`
+   - 抽出 `VisualRegionFillPayloadBase`
+   - `VisualRegionFillPayload` 改回 `image: VisualRegionImagePayload`
+   - 新增 `VisualRegionFillRequestPayload`
+   - `AI_FILL_VISUAL_REGION` 消息 payload 改为 `VisualRegionFillPayload | VisualRegionFillRequestPayload`
+
+2. `src/content/visualRegionFill.ts`
+   - content 发消息时不再伪装成严格 `VisualRegionFillPayload`
+   - 改为用 `satisfies VisualRegionFillRequestPayload` 明确声明这是“无图入口请求”
+
+3. `src/background/index.ts`
+   - `handleVisualRegionFillRequest()` 接受联合类型入口
+   - 若已是严格有图 payload，直接进入 `handleVisualRegionFill()`
+   - 若是无图请求，则先 `captureVisibleRegion()`，再组装：
+
+```ts
+const strictPayload: VisualRegionFillPayload = { ...payload, image };
+return handleVisualRegionFill(strictPayload);
+```
+
+4. `src/background/visualRegionFill.test.ts`
+   - 将背景路由测试改成“无图请求”场景
+   - 断言 background 确实先发出 `CROP_IMAGE_OFFSCREEN`，再走后续主链路
+
+### 本次最小验证
+
+执行：
+
+```bash
+npx tsc -b
+node --experimental-strip-types --test src/background/visualRegionFill.test.ts
+```
+
+结果：
+
+- `npx tsc -b` 通过，说明严格有图类型与无图入口类型都已正确收敛
+- 定向测试 3/3 通过，其中新增覆盖了“background 为无图请求补截图后再进入主链路”
+
+### 本次提交前顾虑
+
+1. `AI_FILL_VISUAL_REGION` 目前仍以联合类型作为消息入口，这符合“入口可无图、主链路必须有图”的要求；若未来继续扩展其他调用方，需要继续沿用这一边界，避免再次把严格主链路类型放宽。
+2. 这次最小验证主要锁住了类型边界与 background 补图编排，没有重跑与本条评审无关的更大范围回归。

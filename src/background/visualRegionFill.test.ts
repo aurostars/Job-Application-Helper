@@ -5,6 +5,7 @@ import type {
   Message,
   UserProfile,
   VisualRegionFillPayload,
+  VisualRegionFillRequestPayload,
 } from '../shared/types.ts';
 import {
   captureVisibleRegion,
@@ -57,6 +58,11 @@ function createPayload(): VisualRegionFillPayload {
       height: 100,
     },
   };
+}
+
+function createRequestPayload(): VisualRegionFillRequestPayload {
+  const { image: _image, ...payload } = createPayload();
+  return payload;
 }
 
 function stubChromeForCapture() {
@@ -175,10 +181,11 @@ test('captureVisibleRegion 调用截图与 offscreen 裁剪', async () => {
   }
 });
 
-test('background index 能识别 AI_FILL_VISUAL_REGION', async () => {
+test('background index 会为无图请求补截图后再进入 AI_FILL_VISUAL_REGION 主链路', async () => {
   const originalChrome = (globalThis as { chrome?: unknown }).chrome;
   const originalFetch = globalThis.fetch;
-  const payload = createPayload();
+  const payload = createRequestPayload();
+  const sentMessages: Message[] = [];
 
   (globalThis as { chrome?: unknown }).chrome = {
     runtime: {
@@ -187,7 +194,18 @@ test('background index 能识别 AI_FILL_VISUAL_REGION', async () => {
       openOptionsPage: () => {},
       getManifest: () => ({ version: 'test' }),
       getContexts: async () => [],
-      sendMessage: async () => ({ success: true }),
+      sendMessage: async (message: Message) => {
+        sentMessages.push(message);
+        return {
+          success: true,
+          data: {
+            base64: 'Y3JvcHBlZA==',
+            mimeType: 'image/png',
+            width: 120,
+            height: 60,
+          },
+        };
+      },
     },
     storage: {
       local: {
@@ -250,7 +268,7 @@ test('background index 能识别 AI_FILL_VISUAL_REGION', async () => {
     const response = await backgroundModule.handleMessage({
       type: 'AI_FILL_VISUAL_REGION',
       payload,
-    } as unknown as Message, {} as chrome.runtime.MessageSender);
+    } as unknown as Message, { tab: { windowId: 1 } } as chrome.runtime.MessageSender);
 
     assert.equal(response.success, true);
     assert.deepEqual(response.data, {
@@ -261,6 +279,13 @@ test('background index 能识别 AI_FILL_VISUAL_REGION', async () => {
         value: '硕士',
       }],
     });
+    assert.deepEqual(sentMessages, [{
+      type: 'CROP_IMAGE_OFFSCREEN',
+      payload: {
+        imageDataUrl: 'data:image/png;base64,c2NyZWVuc2hvdA==',
+        selectionRect: { x: 0, y: 0, width: 200, height: 100 },
+      },
+    }]);
   } finally {
     (globalThis as { chrome?: unknown }).chrome = originalChrome;
     globalThis.fetch = originalFetch;
