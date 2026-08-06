@@ -356,6 +356,8 @@ export type Message =
   | { type: 'FILL_FORM'; payload?: null }
   | { type: 'DETECT_FIELDS'; payload?: null }
   | { type: 'START_AI_REGION_FILL'; payload?: VisualRegionControlPayload | null }
+  | { type: 'AI_FILL_VISUAL_REGION'; payload: VisualRegionFillPayload }
+  | { type: 'CROP_IMAGE_OFFSCREEN'; payload: { imageDataUrl: string; selectionRect: VisualRegionSelectionRect } }
   | { type: 'WRITE_FOCUSED_FIELD'; payload: { tabId: number; value: string } }
   | { type: 'APPLY_FOCUSED_FIELD'; payload: VisualRegionFillResult }
   | { type: 'GET_RESUME_DATA'; payload?: null }

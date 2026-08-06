@@ -49,6 +49,7 @@ import {
   updateApplicationRecord,
 } from '../services/application-tracking/recordService.ts';
 import { syncApplicationDestinations } from '../services/application-tracking/syncCoordinator.ts';
+import { handleVisualRegionFill } from './visualRegionFill.ts';
 
 // Background Service Worker 入口
 console.log('Background service worker started');
@@ -140,6 +141,9 @@ export async function handleMessage(
 
     case 'AI_FILL_SECTION':
       return await handleAIFillSection(message.payload);
+
+    case 'AI_FILL_VISUAL_REGION':
+      return await handleVisualRegionFill((message as any).payload);
 
     case 'CANCEL_AI_FILL':
       return handleCancelAIFill(message.payload.requestId);
