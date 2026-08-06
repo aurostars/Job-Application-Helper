@@ -137,6 +137,7 @@ jobs:
           API_BASE="https://gitee.com/api/v5/repos/${GITEE_REPO}"
           TAG_NAME="${{ steps.meta.outputs.tag_name }}"
           RELEASE_NAME="${{ steps.meta.outputs.release_name }}"
+          TARGET_COMMIT="$(git rev-list -n 1 "refs/tags/${TAG_NAME}")"
           ARTIFACT_NAME="job-application-helper-extension.zip"
           RESPONSE_FILE="$(mktemp)"
           RELEASE_JSON_FILE="$(mktemp)"
@@ -186,6 +187,7 @@ jobs:
             CREATE_CODE="$(curl -sS -o "${RESPONSE_FILE}" -w "%{http_code}" -X POST \
               --data-urlencode "access_token=${GITEE_TOKEN}" \
               --data-urlencode "tag_name=${TAG_NAME}" \
+              --data-urlencode "target_commitish=${TARGET_COMMIT}" \
               --data-urlencode "name=${RELEASE_NAME}" \
               --data-urlencode "body=Automated release for ${TAG_NAME}" \
               "${API_BASE}/releases")"
