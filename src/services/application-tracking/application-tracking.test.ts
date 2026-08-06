@@ -11,6 +11,10 @@ import {
   resetApplicationSyncHooks,
   setApplicationSyncHooks,
 } from './syncCoordinator.ts';
+import {
+  buildApplicationSyncConfigPayload,
+  buildInitialApplicationSyncFormState,
+} from '../../options/applicationSyncSettingsState.ts';
 
 type BackgroundModule = typeof import('../../background/index.ts');
 
@@ -109,6 +113,44 @@ bootstrapChrome.restore();
 
 test.afterEach(() => {
   resetApplicationSyncHooks();
+});
+
+test('buildInitialApplicationSyncFormState 为未配置状态提供默认值', () => {
+  assert.deepEqual(buildInitialApplicationSyncFormState(null), {
+    destination: 'none',
+    autoSync: false,
+    webdavCsvFileName: 'application-records.csv',
+    feishu: {
+      appToken: '',
+      tableId: '',
+      viewName: '',
+    },
+  });
+});
+
+test('buildApplicationSyncConfigPayload 会裁剪字段并保留飞书配置', () => {
+  assert.deepEqual(
+    buildApplicationSyncConfigPayload({
+      destination: 'both',
+      autoSync: true,
+      webdavCsvFileName: '  jobs.csv  ',
+      feishu: {
+        appToken: ' app_token ',
+        tableId: ' tbl_123 ',
+        viewName: ' 默认视图 ',
+      },
+    }),
+    {
+      destination: 'both',
+      autoSync: true,
+      webdavCsvFileName: 'jobs.csv',
+      feishu: {
+        appToken: 'app_token',
+        tableId: 'tbl_123',
+        viewName: '默认视图',
+      },
+    },
+  );
 });
 
 test('保存投递记录后根据配置触发目标同步', async () => {
