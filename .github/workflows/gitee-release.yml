@@ -117,31 +117,6 @@ jobs:
         if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
         run: npm run package:extension
 
-      - name: 配置 Gitee 远端
-        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
-        shell: bash
-        env:
-          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          GITEE_REPO: ${{ vars.GITEE_REPO }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if git remote get-url gitee >/dev/null 2>&1; then
-            git remote remove gitee
-          fi
-
-          git remote add gitee "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
-          echo "已配置 Gitee 远端：${GITEE_REPO}"
-
-      - name: 同步标签到 Gitee
-        if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
-        shell: bash
-        run: |
-          git push gitee "refs/tags/${{ steps.meta.outputs.tag_name }}:refs/tags/${{ steps.meta.outputs.tag_name }}"
-          echo "已同步标签到 Gitee：${{ steps.meta.outputs.tag_name }}"
-
       - name: 检查构建产物
         if: steps.config.outputs.ready == 'true' && steps.meta.outputs.valid_tag == 'true'
         shell: bash
