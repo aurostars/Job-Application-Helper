@@ -274,6 +274,32 @@ export interface FocusedFieldWriteResult {
   reason?: FocusedFieldFailureReason;
 }
 
+export interface VisualRegionControlPayload {
+  sessionId?: string;
+  tabId?: number;
+}
+
+export interface VisualRegionSelectionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface VisualRegionFillPayload {
+  imageDataUrl?: string;
+  region: VisualRegionSelectionRect;
+  instruction?: string;
+  pageContext?: string;
+  targetLabel?: string;
+}
+
+export interface VisualRegionFillResult {
+  value: string;
+  confidence?: number;
+  model?: string;
+}
+
 // 消息类型定义
 export type Message =
   | { type: 'GET_USER_PROFILE'; payload?: null }
@@ -289,9 +315,9 @@ export type Message =
   | { type: 'PARSE_RESUME'; payload: { file: string; fileType: string; fileName: string; rawText?: string } }
   | { type: 'FILL_FORM'; payload?: null }
   | { type: 'DETECT_FIELDS'; payload?: null }
-  | { type: 'START_AI_REGION_FILL'; payload?: null }
+  | { type: 'START_AI_REGION_FILL'; payload?: VisualRegionControlPayload | null }
   | { type: 'WRITE_FOCUSED_FIELD'; payload: { tabId: number; value: string } }
-  | { type: 'APPLY_FOCUSED_FIELD'; payload: { value: string } }
+  | { type: 'APPLY_FOCUSED_FIELD'; payload: VisualRegionFillResult }
   | { type: 'GET_RESUME_DATA'; payload?: null }
   | { type: 'GENERATE_ANSWER'; payload: { questionText: string; context?: string; fieldMaxLength?: number; language?: 'zh' | 'en' } }
   | { type: 'MATCH_FIELDS_LLM'; payload: { fields: Array<{ index: number; name: string; id: string; placeholder: string; labelText: string; type: string }>; domain: string } }

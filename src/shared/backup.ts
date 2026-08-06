@@ -96,6 +96,7 @@ function validateLLMConfig(value: unknown): value is LLMConfig {
   }
   if (value.temperature !== undefined && typeof value.temperature !== 'number') return false;
   if (value.maxTokens !== undefined && typeof value.maxTokens !== 'number') return false;
+  if (value.visionEnabled !== undefined && typeof value.visionEnabled !== 'boolean') return false;
   return true;
 }
 

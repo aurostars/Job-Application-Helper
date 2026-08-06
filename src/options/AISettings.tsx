@@ -223,6 +223,23 @@ export function AISettings({ dataRevision = 0 }: AISettingsProps) {
         )}
       </div>
 
+      {config.provider === LLMProvider.CUSTOM && (
+        <div className="settings-field">
+          <label className="settings-checkbox-label">
+            <input
+              type="checkbox"
+              checked={Boolean(config.visionEnabled)}
+              onChange={e => setConfig({ ...config, visionEnabled: e.target.checked })}
+            />
+            启用视觉输入能力
+          </label>
+          <p className="settings-hint">
+            仅当你的自定义 OpenAI 兼容服务实际支持图片输入时再开启。
+            未开启时，视觉优先框选补填会主动阻断，避免把图片请求发到不兼容模型。
+          </p>
+        </div>
+      )}
+
       <div className="settings-button-row">
         <button
           onClick={handleTest}
