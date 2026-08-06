@@ -31,7 +31,7 @@ interface VisualRegionFillDeps {
   createLLM: (config: LLMConfig) => { chat: (messages: Parameters<LLMService['chat']>[0]) => Promise<LLMResponse> };
   getContexts: () => Promise<chrome.runtime.ExtensionContext[]>;
   createOffscreenDocument: (options: chrome.offscreen.CreateParameters) => Promise<void>;
-  captureVisibleTab: (windowId: number, options: chrome.tabs.ImageDetails) => Promise<string>;
+  captureVisibleTab: (windowId: number, options: { format: 'png' }) => Promise<string>;
   sendRuntimeMessage: <T>(message: unknown) => Promise<MessageResponse<T>>;
 }
 

@@ -5,9 +5,10 @@ import type {
   FocusedFieldWriteResult,
   Message,
   MessageResponse,
-  UserProfile,
   ParsedResumeData,
   UpdateApplicationRecordInput,
+  UserProfile,
+  VisualRegionFillPayload,
   WebDAVConfig,
 } from '../shared/types.ts';
 import { StorageService } from '../shared/storage.ts';
@@ -49,7 +50,10 @@ import {
   updateApplicationRecord,
 } from '../services/application-tracking/recordService.ts';
 import { syncApplicationDestinations } from '../services/application-tracking/syncCoordinator.ts';
-import { handleVisualRegionFill } from './visualRegionFill.ts';
+import {
+  captureVisibleRegion,
+  handleVisualRegionFill,
+} from './visualRegionFill.ts';
 
 // Background Service Worker 入口
 console.log('Background service worker started');
@@ -89,7 +93,7 @@ chrome.runtime.onMessage.addListener(
 // 处理消息
 export async function handleMessage(
   message: Message,
-  _sender: chrome.runtime.MessageSender
+  sender: chrome.runtime.MessageSender
 ): Promise<MessageResponse> {
   switch (message.type) {
     case 'GET_USER_PROFILE':
@@ -143,7 +147,7 @@ export async function handleMessage(
       return await handleAIFillSection(message.payload);
 
     case 'AI_FILL_VISUAL_REGION':
-      return await handleVisualRegionFill((message as any).payload);
+      return await handleVisualRegionFillRequest((message as any).payload, sender);
 
     case 'CANCEL_AI_FILL':
       return handleCancelAIFill(message.payload.requestId);
@@ -357,6 +361,23 @@ function handleCaptureApplicationFromPage(): MessageResponse {
     success: false,
     error: 'CAPTURE_APPLICATION_FROM_PAGE 已接入最小消息分发边界，尚未实现页面抓取',
   };
+}
+
+async function handleVisualRegionFillRequest(
+  payload: VisualRegionFillPayload,
+  sender: chrome.runtime.MessageSender,
+): Promise<MessageResponse> {
+  if (payload.image) {
+    return handleVisualRegionFill(payload);
+  }
+
+  const windowId = sender.tab?.windowId;
+  if (typeof windowId !== 'number') {
+    return { success: false, error: '无法获取当前页面截图' };
+  }
+
+  const image = await captureVisibleRegion(windowId, payload.region);
+  return handleVisualRegionFill({ ...payload, image });
 }
 
 async function handleWriteFocusedField(

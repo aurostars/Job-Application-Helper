@@ -28,13 +28,6 @@ if (existsSync(zipFile)) {
   rmSync(zipFile, { force: true });
 }
 
-function run(command, args) {
-  return spawnSync(command, args, {
-    cwd: projectRoot,
-    stdio: 'inherit',
-  });
-}
-
 function tryZip() {
   const result = spawnSync('zip', ['-r', zipFile, '.', '-x', '*.DS_Store', '__MACOSX/*'], {
     cwd: distDir,

@@ -321,7 +321,7 @@ export interface VisualRegionFillMapping {
 export interface VisualRegionFillPayload {
   requestId?: string;
   domain?: string;
-  image: VisualRegionImagePayload;
+  image?: VisualRegionImagePayload;
   controls: VisualRegionControlCandidate[];
   imageDataUrl?: string;
   region: VisualRegionSelectionRect;

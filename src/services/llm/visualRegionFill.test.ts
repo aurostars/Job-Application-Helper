@@ -86,7 +86,6 @@ test('视觉补填 prompt 不允许无图输入', () => {
 
 test('过滤不存在 controlId、空值和不在 options 中的结果', () => {
   const payload = createPayload();
-  const profile = createProfile();
 
   const mappings = validateVisualRegionMappings([
     {
