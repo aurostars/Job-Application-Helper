@@ -1,0 +1,43 @@
+name: 同步到 Gitee
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: ${{ vars.GITEE_REPO != '' && secrets.GITEE_USERNAME != '' && secrets.GITEE_TOKEN != '' }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Gitee 远端
+        env:
+          GITEE_USERNAME: ${{ secrets.GITEE_USERNAME }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ vars.GITEE_REPO }}
+        run: |
+          git remote add gitee "https://${GITEE_USERNAME}:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
+
+      - name: 同步 main 分支
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        run: |
+          git push gitee refs/remotes/origin/main:refs/heads/main
+
+      - name: 同步当前标签
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          git push gitee "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+
+      - name: 手动触发时同步全部标签
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git push gitee --tags
