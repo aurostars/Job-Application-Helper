@@ -194,6 +194,10 @@ export function buildVisualRegionFillPrompt(
   payload: VisualRegionFillPayload,
   profile: UserProfile
 ): { system: string; userParts: ChatContentPart[] } {
+  if (!payload.image?.base64 || !payload.image.mimeType) {
+    throw new Error('缺少视觉截图输入');
+  }
+
   const system = `你是网申视觉补填助手。截图是主语义输入，controls 是唯一允许输出目标。
 
 严格规则：
@@ -211,21 +215,18 @@ export function buildVisualRegionFillPrompt(
     payload.targetLabel ? `目标标签：${payload.targetLabel}` : '',
     payload.pageContext ? `页面上下文：${payload.pageContext}` : '',
     `候选人资料：\n${JSON.stringify(profile, null, 2)}`,
-    `控件清单（只允许输出这些 controlId）：\n${JSON.stringify(payload.controls ?? [], null, 2)}`,
+    `控件清单（只允许输出这些 controlId）：\n${JSON.stringify(payload.controls, null, 2)}`,
     '请结合截图与控件清单，返回 JSON：{"mappings":[...]}。',
   ].filter(Boolean);
 
   const userParts: ChatContentPart[] = [
     { type: 'text', text: sections.join('\n\n') },
-  ];
-
-  if (payload.image) {
-    userParts.push({
+    {
       type: 'image',
       mimeType: payload.image.mimeType,
       data: payload.image.base64,
-    });
-  }
+    },
+  ];
 
   return { system, userParts };
 }

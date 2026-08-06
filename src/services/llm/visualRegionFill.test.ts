@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { VisualRegionFillPayload, UserProfile } from '../../shared/types.ts';
+import type {
+  VisualRegionFillMappingResult,
+  VisualRegionFillPayload,
+  VisualRegionFillResult,
+  UserProfile,
+} from '../../shared/types.ts';
 import { buildVisualRegionFillPrompt } from './prompts.ts';
 import {
   parseVisualRegionFillResponse,
@@ -27,7 +32,13 @@ function createPayload(): VisualRegionFillPayload {
       rect: { left: 10, top: 10, width: 120, height: 36 },
       contextText: '教育经历 学历',
     }],
-  } as VisualRegionFillPayload;
+    region: {
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 100,
+    },
+  };
 }
 
 function createProfile(): UserProfile {
@@ -59,6 +70,18 @@ test('视觉补填 prompt 包含图片 block 与只允许输出已有 controlId 
     mimeType: 'image/png',
     data: 'ZmFrZQ==',
   });
+});
+
+test('视觉补填 prompt 不允许无图输入', () => {
+  const payloadWithoutImage = {
+    ...createPayload(),
+    image: undefined,
+  } as unknown as VisualRegionFillPayload;
+
+  assert.throws(
+    () => buildVisualRegionFillPrompt(payloadWithoutImage, createProfile()),
+    /缺少视觉截图输入/,
+  );
 });
 
 test('过滤不存在 controlId、空值和不在 options 中的结果', () => {
@@ -101,7 +124,7 @@ test('过滤不存在 controlId、空值和不在 options 中的结果', () => {
 });
 
 test('解析模型 JSON 后返回校验前的 mappings', () => {
-  const result = parseVisualRegionFillResponse(`{
+  const result: VisualRegionFillMappingResult = parseVisualRegionFillResponse(`{
     "mappings": [
       {
         "controlId": "ctrl-degree",
@@ -120,4 +143,14 @@ test('解析模型 JSON 后返回校验前的 mappings', () => {
       value: '硕士',
     }],
   });
+});
+
+test('旧的聚焦字段结果协议仍要求 value', () => {
+  const legacyResult: VisualRegionFillResult = {
+    value: '硕士',
+    confidence: 0.9,
+    model: 'test-model',
+  };
+
+  assert.equal(legacyResult.value, '硕士');
 });

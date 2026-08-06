@@ -321,8 +321,8 @@ export interface VisualRegionFillMapping {
 export interface VisualRegionFillPayload {
   requestId?: string;
   domain?: string;
-  image?: VisualRegionImagePayload;
-  controls?: VisualRegionControlCandidate[];
+  image: VisualRegionImagePayload;
+  controls: VisualRegionControlCandidate[];
   imageDataUrl?: string;
   region: VisualRegionSelectionRect;
   instruction?: string;
@@ -331,10 +331,13 @@ export interface VisualRegionFillPayload {
 }
 
 export interface VisualRegionFillResult {
-  value?: string;
+  value: string;
   confidence?: number;
   model?: string;
-  mappings?: VisualRegionFillMapping[];
+}
+
+export interface VisualRegionFillMappingResult {
+  mappings: VisualRegionFillMapping[];
 }
 
 // 消息类型定义

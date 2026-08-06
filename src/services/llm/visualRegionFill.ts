@@ -2,11 +2,11 @@ import type {
   UserProfile,
   VisualRegionControlCandidate,
   VisualRegionFillMapping,
+  VisualRegionFillMappingResult,
   VisualRegionFillPayload,
-  VisualRegionFillResult,
 } from '../../shared/types.ts';
 
-export function parseVisualRegionFillResponse(raw: string): VisualRegionFillResult {
+export function parseVisualRegionFillResponse(raw: string): VisualRegionFillMappingResult {
   const normalized = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
 
   let parsed: unknown;
@@ -31,15 +31,15 @@ export function parseVisualRegionFillResponse(raw: string): VisualRegionFillResu
 }
 
 export function validateVisualRegionMappings(
-  mappings: VisualRegionFillResult['mappings'],
+  mappings: VisualRegionFillMappingResult['mappings'],
   payload: VisualRegionFillPayload,
   profile: UserProfile,
-): VisualRegionFillResult['mappings'] {
+): VisualRegionFillMappingResult['mappings'] {
   const controls = new Map<string, VisualRegionControlCandidate>(
-    (payload.controls ?? []).map(control => [control.controlId, control]),
+    payload.controls.map(control => [control.controlId, control]),
   );
 
-  return (mappings ?? []).filter((mapping): mapping is VisualRegionFillMapping => {
+  return mappings.filter((mapping): mapping is VisualRegionFillMapping => {
     const control = controls.get(mapping.controlId);
     if (!control) return false;
     if (!mapping.value.trim()) return false;
