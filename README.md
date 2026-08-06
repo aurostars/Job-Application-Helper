@@ -176,27 +176,6 @@ npm run dev
 - `npm run lint`：运行静态代码检查。
 - `npm run dev`：启动 Vite 开发服务，扩展调试仍需构建后加载 `dist/`。
 
-### GitHub 同步到 Gitee
-
-仓库已预留 GitHub Actions 自动同步到 Gitee 的 workflow：`.github/workflows/sync-to-gitee.yml`。
-
-使用前需要在 GitHub 仓库中配置：
-
-- `Settings -> Secrets and variables -> Actions -> Secrets`
-  - `GITEE_USERNAME`：你的 Gitee 用户名
-  - `GITEE_TOKEN`：你的 Gitee 访问令牌
-- `Settings -> Secrets and variables -> Actions -> Variables`
-  - `GITEE_REPO`：Gitee 仓库路径，例如 `aurostars/Job-Application-Helper`
-
-配置完成后：
-
-- 推送 `main` 分支时，会自动同步 `main` 到 Gitee
-- 推送 `v*` 标签时，会自动同步当前标签到 Gitee
-- 也可以在 GitHub Actions 中手动运行“同步到 Gitee”，补同步 `main` 和全部标签
-
-如果没有配置上述 Secrets / Variables，这条同步 workflow 会自动跳过，不会影响正常开发和 GitHub Release。
-
-
 ## 技术栈
 
 - React 19
