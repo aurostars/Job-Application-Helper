@@ -284,6 +284,8 @@ export interface VisualRegionSelectionRect {
   y: number;
   width: number;
   height: number;
+  viewportWidth?: number;
+  viewportHeight?: number;
 }
 
 export interface VisualRegionImagePayload {

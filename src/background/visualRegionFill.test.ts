@@ -56,6 +56,8 @@ function createPayload(): VisualRegionFillPayload {
       y: 0,
       width: 200,
       height: 100,
+      viewportWidth: 1024,
+      viewportHeight: 768,
     },
   };
 }
@@ -160,6 +162,8 @@ test('captureVisibleRegion 调用截图与 offscreen 裁剪', async () => {
       y: 20,
       width: 120,
       height: 60,
+      viewportWidth: 300,
+      viewportHeight: 150,
     });
 
     assert.deepEqual(result, {
@@ -173,11 +177,104 @@ test('captureVisibleRegion 调用截图与 offscreen 裁剪', async () => {
       type: 'CROP_IMAGE_OFFSCREEN',
       payload: {
         imageDataUrl: 'data:image/png;base64,c2NyZWVuc2hvdA==',
-        selectionRect: { x: 10, y: 20, width: 120, height: 60 },
+        selectionRect: {
+          x: 10,
+          y: 20,
+          width: 120,
+          height: 60,
+          viewportWidth: 300,
+          viewportHeight: 150,
+        },
       },
     }]);
   } finally {
     stub.restore();
+  }
+});
+
+test('background index 收到 CANCEL_AI_FILL 时会真正中断视觉链路中的模型请求', async () => {
+  const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+  const originalFetch = globalThis.fetch;
+  const payload = createPayload();
+  let aborted = false;
+
+  (globalThis as { chrome?: unknown }).chrome = {
+    runtime: {
+      onMessage: { addListener: () => {} },
+      onInstalled: { addListener: () => {} },
+      openOptionsPage: () => {},
+      getManifest: () => ({ version: 'test' }),
+      getContexts: async () => [],
+      sendMessage: async () => {
+        throw new Error('strict payload 不应触发裁图');
+      },
+    },
+    storage: {
+      local: {
+        get: async (key: string | string[]) => {
+          if (Array.isArray(key)) return {};
+          if (key === 'llmConfig') {
+            return {
+              llmConfig: {
+                provider: LLMProvider.CUSTOM,
+                apiKey: 'sk-test',
+                baseUrl: 'https://example.com/v1',
+                model: 'custom-model',
+                visionEnabled: true,
+              },
+            };
+          }
+          if (key === 'userProfile') {
+            return { userProfile: createProfile() };
+          }
+          return {};
+        },
+        set: async () => {},
+        remove: async () => {},
+        clear: async () => {},
+        getBytesInUse: async () => 0,
+        QUOTA_BYTES: 1024,
+      },
+    },
+  };
+
+  globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
+    const init = args[1] as RequestInit | undefined;
+    const signal = init?.signal;
+
+    return new Promise<Response>((_resolve, reject) => {
+      signal?.addEventListener('abort', () => {
+        aborted = true;
+        reject(new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const moduleUrl = new URL(`./index.ts?abort-test=${Date.now()}`, import.meta.url).href;
+    const backgroundModule = await import(moduleUrl);
+    const inFlight = backgroundModule.handleMessage({
+      type: 'AI_FILL_VISUAL_REGION',
+      payload,
+    } as unknown as Message, {} as chrome.runtime.MessageSender);
+
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const cancelResponse = await backgroundModule.handleMessage({
+      type: 'CANCEL_AI_FILL',
+      payload: { requestId: payload.requestId },
+    } as unknown as Message, {} as chrome.runtime.MessageSender);
+
+    const response = await inFlight;
+
+    assert.equal(cancelResponse.success, true);
+    assert.deepEqual(cancelResponse.data, { cancelled: true });
+    assert.equal(aborted, true);
+    assert.equal(response.success, false);
+    assert.equal(response.error, 'AI 补填已终止');
+  } finally {
+    (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    globalThis.fetch = originalFetch;
   }
 });
 
@@ -283,7 +380,14 @@ test('background index 会为无图请求补截图后再进入 AI_FILL_VISUAL_RE
       type: 'CROP_IMAGE_OFFSCREEN',
       payload: {
         imageDataUrl: 'data:image/png;base64,c2NyZWVuc2hvdA==',
-        selectionRect: { x: 0, y: 0, width: 200, height: 100 },
+        selectionRect: {
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 100,
+          viewportWidth: 1024,
+          viewportHeight: 768,
+        },
       },
     }]);
   } finally {

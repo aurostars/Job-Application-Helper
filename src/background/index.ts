@@ -368,18 +368,40 @@ async function handleVisualRegionFillRequest(
   payload: VisualRegionFillPayload | VisualRegionFillRequestPayload,
   sender: chrome.runtime.MessageSender,
 ): Promise<MessageResponse> {
-  if (isVisualRegionFillPayload(payload)) {
-    return handleVisualRegionFill(payload);
+  const requestId = payload.requestId?.trim();
+  let controller: AbortController | undefined;
+  if (requestId) {
+    controller = new AbortController();
+    aiFillControllers.set(requestId, controller);
   }
 
-  const windowId = sender.tab?.windowId;
-  if (typeof windowId !== 'number') {
-    return { success: false, error: '无法获取当前页面截图' };
-  }
+  try {
+    if (isVisualRegionFillPayload(payload)) {
+      return await handleVisualRegionFill(payload, undefined, controller?.signal);
+    }
 
-  const image = await captureVisibleRegion(windowId, payload.region);
-  const strictPayload: VisualRegionFillPayload = { ...payload, image };
-  return handleVisualRegionFill(strictPayload);
+    const windowId = sender.tab?.windowId;
+    if (typeof windowId !== 'number') {
+      return { success: false, error: '无法获取当前页面截图' };
+    }
+
+    const image = await captureVisibleRegion(windowId, payload.region);
+    if (controller?.signal.aborted) {
+      return { success: false, error: 'AI 补填已终止' };
+    }
+
+    const strictPayload: VisualRegionFillPayload = { ...payload, image };
+    return await handleVisualRegionFill(strictPayload, undefined, controller?.signal);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return { success: false, error: 'AI 补填已终止' };
+    }
+    throw error;
+  } finally {
+    if (requestId) {
+      aiFillControllers.delete(requestId);
+    }
+  }
 }
 
 function isVisualRegionFillPayload(

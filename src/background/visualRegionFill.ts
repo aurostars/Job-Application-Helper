@@ -14,6 +14,7 @@ import type {
   VisualRegionFillMappingResult,
   VisualRegionFillPayload,
   VisualRegionImagePayload,
+  VisualRegionSelectionRect,
 } from '../shared/types.ts';
 
 export interface DOMRectLike {
@@ -23,12 +24,19 @@ export interface DOMRectLike {
   top?: number;
   width: number;
   height: number;
+  viewportWidth?: number;
+  viewportHeight?: number;
 }
 
 interface VisualRegionFillDeps {
   getLLMConfig: () => Promise<LLMConfig | null>;
   getUserProfile: () => Promise<UserProfile | null>;
-  createLLM: (config: LLMConfig) => { chat: (messages: Parameters<LLMService['chat']>[0]) => Promise<LLMResponse> };
+  createLLM: (config: LLMConfig) => {
+    chat: (
+      messages: Parameters<LLMService['chat']>[0],
+      signal?: AbortSignal,
+    ) => Promise<LLMResponse>;
+  };
   getContexts: () => Promise<chrome.runtime.ExtensionContext[]>;
   createOffscreenDocument: (options: chrome.offscreen.CreateParameters) => Promise<void>;
   captureVisibleTab: (windowId: number, options: { format: 'png' }) => Promise<string>;
@@ -54,8 +62,11 @@ const defaultDeps: VisualRegionFillDeps = {
 export async function handleVisualRegionFill(
   payload: VisualRegionFillPayload,
   deps: VisualRegionFillDeps = defaultDeps,
+  signal?: AbortSignal,
 ): Promise<MessageResponse<VisualRegionFillMappingResult>> {
   try {
+    throwIfAborted(signal);
+
     const config = await deps.getLLMConfig();
     if (!config?.apiKey?.trim()) {
       return { success: false, error: '请先在设置中配置 AI 服务' };
@@ -76,10 +87,11 @@ export async function handleVisualRegionFill(
 
     const { system, userParts } = buildVisualRegionFillPrompt(payload, profile);
     const llm = deps.createLLM(config);
+    throwIfAborted(signal);
     const result = await llm.chat([
       { role: 'system', content: system },
       { role: 'user', content: userParts },
-    ]);
+    ], signal);
 
     const parsed = parseVisualRegionFillResponse(result.content);
     const mappings = validateVisualRegionMappings(parsed.mappings, payload, profile);
@@ -92,6 +104,9 @@ export async function handleVisualRegionFill(
       data: { mappings },
     };
   } catch (error) {
+    if (isAbortError(error)) {
+      return { success: false, error: 'AI 补填已终止' };
+    }
     return {
       success: false,
       error: error instanceof Error ? error.message : '视觉补填失败',
@@ -133,13 +148,22 @@ async function ensureOffscreenDocument(deps: VisualRegionFillDeps): Promise<void
   });
 }
 
-function normalizeRect(selectionRect: DOMRectLike) {
-  return {
+function normalizeRect(selectionRect: DOMRectLike): VisualRegionSelectionRect {
+  const normalized: VisualRegionSelectionRect = {
     x: Math.max(0, Math.round(selectionRect.x ?? selectionRect.left ?? 0)),
     y: Math.max(0, Math.round(selectionRect.y ?? selectionRect.top ?? 0)),
     width: Math.max(1, Math.round(selectionRect.width)),
     height: Math.max(1, Math.round(selectionRect.height)),
   };
+
+  if (typeof selectionRect.viewportWidth === 'number') {
+    normalized.viewportWidth = Math.max(1, Math.round(selectionRect.viewportWidth));
+  }
+  if (typeof selectionRect.viewportHeight === 'number') {
+    normalized.viewportHeight = Math.max(1, Math.round(selectionRect.viewportHeight));
+  }
+
+  return normalized;
 }
 
 function mapVisionSupportError(reason: VisionSupportReason): string {
@@ -152,4 +176,15 @@ function mapVisionSupportError(reason: VisionSupportReason): string {
     default:
       return '当前模型不支持图片输入，请在设置中切换到支持视觉输入的模型';
   }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throw new DOMException('Aborted', 'AbortError');
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : error instanceof Error && error.name === 'AbortError';
 }

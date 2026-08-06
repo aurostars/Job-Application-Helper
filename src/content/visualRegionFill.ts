@@ -479,6 +479,8 @@ function normalizeRuntimeSelectionRect(
     y: Math.max(0, Math.round(bounds.top)),
     width: Math.max(1, Math.round(bounds.right - bounds.left)),
     height: Math.max(1, Math.round(bounds.bottom - bounds.top)),
+    viewportWidth: Math.max(1, Math.round(window.innerWidth)),
+    viewportHeight: Math.max(1, Math.round(window.innerHeight)),
   };
 }
 

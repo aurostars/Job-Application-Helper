@@ -5,6 +5,7 @@
 import { parsePDF } from '../parsers/pdfParser';
 import { parseDOCX } from '../parsers/docxParser';
 import type { VisualRegionImagePayload, VisualRegionSelectionRect } from '../shared/types.ts';
+import { resolveImageCropRect } from './imageCrop.ts';
 
 console.log('Offscreen document loaded, waiting for parsing requests...');
 
@@ -25,10 +26,10 @@ async function cropImageDataUrl(
   selectionRect: VisualRegionSelectionRect,
 ): Promise<VisualRegionImagePayload> {
   const image = await loadImage(imageDataUrl);
-  const x = clamp(Math.round(selectionRect.x), 0, image.naturalWidth);
-  const y = clamp(Math.round(selectionRect.y), 0, image.naturalHeight);
-  const width = clamp(Math.round(selectionRect.width), 1, image.naturalWidth - x);
-  const height = clamp(Math.round(selectionRect.height), 1, image.naturalHeight - y);
+  const { x, y, width, height } = resolveImageCropRect(selectionRect, {
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+  });
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -56,10 +57,6 @@ function loadImage(imageDataUrl: string): Promise<HTMLImageElement> {
     image.onerror = () => reject(new Error('截图数据无法加载'));
     image.src = imageDataUrl;
   });
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 chrome.runtime.onMessage.addListener(

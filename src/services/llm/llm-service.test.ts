@@ -218,3 +218,72 @@ test('openai 兼容接口会把图片消息序列化为 image_url block', async 
     globalThis.fetch = originalFetch;
   }
 });
+
+test('Claude 接口会把图片消息序列化为 image base64 block', async () => {
+  let requestBody = '';
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (_url, init) => {
+    requestBody = String(init?.body);
+    return new Response(JSON.stringify({
+      content: [{ type: 'text', text: '{"ok":true}' }],
+      stop_reason: 'end_turn',
+    }), { status: 200 });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const llm = new LLMService({
+      provider: LLMProvider.CLAUDE,
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+      model: 'claude-sonnet-4-5',
+    });
+
+    await llm.chat([{
+      role: 'user',
+      content: [
+        { type: 'text', text: '看图并返回 JSON' },
+        { type: 'image', mimeType: 'image/jpeg', data: 'Y2xhdWRl' },
+      ],
+    }]);
+
+    assert.match(requestBody, /"type":"image"/);
+    assert.match(requestBody, /"media_type":"image\/jpeg"/);
+    assert.match(requestBody, /"data":"Y2xhdWRl"/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('无视觉模型收到 image part 时立即报错且不发请求', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    return new Response('{}', { status: 200 });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const llm = new LLMService({
+      provider: LLMProvider.QWEN,
+      apiKey: 'sk-test',
+      baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      model: 'qwen-plus',
+    });
+
+    await assert.rejects(
+      llm.chat([{
+        role: 'user',
+        content: [
+          { type: 'text', text: '看图' },
+          { type: 'image', mimeType: 'image/png', data: 'ZmFrZQ==' },
+        ],
+      }]),
+      /当前模型不支持图片输入：PROVIDER_UNSUPPORTED/,
+    );
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
