@@ -190,6 +190,79 @@ export interface FocusedFieldWriteResult {
   reason?: FocusedFieldFailureReason;
 }
 
+export interface VisualRegionControlPayload {
+  sessionId?: string;
+  tabId?: number;
+}
+
+export interface VisualRegionSelectionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  viewportWidth?: number;
+  viewportHeight?: number;
+}
+
+export interface VisualRegionImagePayload {
+  base64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
+export interface VisualRegionControlRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface VisualRegionControlCandidate {
+  controlId: string;
+  tagName: string;
+  label: string;
+  name: string;
+  placeholder: string;
+  options: string[];
+  rect: VisualRegionControlRect;
+  contextText: string;
+}
+
+export interface VisualRegionFillMapping {
+  controlId: string;
+  fieldMeaning: string;
+  matchedProfilePath: string;
+  value: string;
+}
+
+interface VisualRegionFillPayloadBase {
+  requestId?: string;
+  domain?: string;
+  controls: VisualRegionControlCandidate[];
+  imageDataUrl?: string;
+  region: VisualRegionSelectionRect;
+  instruction?: string;
+  pageContext?: string;
+  targetLabel?: string;
+}
+
+export interface VisualRegionFillPayload extends VisualRegionFillPayloadBase {
+  image: VisualRegionImagePayload;
+}
+
+export interface VisualRegionFillRequestPayload extends VisualRegionFillPayloadBase {}
+
+export interface VisualRegionFillResult {
+  value: string;
+  confidence?: number;
+  model?: string;
+}
+
+export interface VisualRegionFillMappingResult {
+  mappings: VisualRegionFillMapping[];
+}
+
 // 消息类型定义
 export type Message =
   | { type: 'GET_USER_PROFILE'; payload?: null }
@@ -198,9 +271,11 @@ export type Message =
   | { type: 'FILL_FORM'; payload?: null }
   | { type: 'START_AI_PAGE_FILL'; payload?: null }
   | { type: 'DETECT_FIELDS'; payload?: null }
-  | { type: 'START_AI_REGION_FILL'; payload?: null }
+  | { type: 'START_AI_REGION_FILL'; payload?: VisualRegionControlPayload | null }
+  | { type: 'AI_FILL_VISUAL_REGION'; payload: VisualRegionFillPayload | VisualRegionFillRequestPayload }
+  | { type: 'CROP_IMAGE_OFFSCREEN'; payload: { imageDataUrl: string; selectionRect: VisualRegionSelectionRect } }
   | { type: 'WRITE_FOCUSED_FIELD'; payload: { tabId: number; value: string } }
-  | { type: 'APPLY_FOCUSED_FIELD'; payload: { value: string } }
+  | { type: 'APPLY_FOCUSED_FIELD'; payload: VisualRegionFillResult }
   | { type: 'GET_RESUME_DATA'; payload?: null }
   | { type: 'GENERATE_ANSWER'; payload: { questionText: string; context?: string; fieldMaxLength?: number; language?: 'zh' | 'en' } }
   | { type: 'MATCH_FIELDS_LLM'; payload: { fields: Array<{ index: number; name: string; id: string; placeholder: string; labelText: string; type: string }>; domain: string } }

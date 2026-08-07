@@ -27,6 +27,7 @@ export interface LLMConfig {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  visionEnabled?: boolean;
 }
 
 /**
@@ -157,9 +158,13 @@ export const PROVIDER_ORDER: LLMProvider[] = [
   LLMProvider.CUSTOM,
 ];
 
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mimeType: string; data: string };
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ChatContentPart[];
 }
 
 export interface LLMResponse {

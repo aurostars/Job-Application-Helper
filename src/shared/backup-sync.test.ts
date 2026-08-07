@@ -71,6 +71,23 @@ test('合法 V1 文档完整保留简历和 API Key', () => {
   assert.equal(result.document.data.llmConfig?.apiKey, 'sk-secret');
 });
 
+test('合法 V1 文档完整保留自定义视觉开关', () => {
+  const json = serializeBackup(createBackupDocument({
+    ...completeData,
+    llmConfig: {
+      provider: 'custom' as never,
+      apiKey: 'sk-secret',
+      baseUrl: 'https://example.com/v1',
+      model: 'my-vision-model',
+      visionEnabled: true,
+    },
+  }, '1.0.0', '2026-01-01T00:00:00.000Z'));
+  const result = parseAndValidateBackup(json);
+  assert.equal(result.success, true);
+  if (!result.success) return;
+  assert.equal(result.document.data.llmConfig?.visionEnabled, true);
+});
+
 const invalidCases: Array<[string, string, string]> = [
   ['非 JSON', '{', 'INVALID_JSON'],
   ['根节点数组', '[]', 'INVALID_ROOT'],
@@ -118,6 +135,14 @@ test('拒绝非字符串简历正文', () => {
 test('拒绝非字符串 API Key', () => {
   const document = JSON.parse(validJson());
   document.data.llmConfig.apiKey = 123;
+  const result = parseAndValidateBackup(JSON.stringify(document));
+  assert.equal(result.success, false);
+  if (!result.success) assert.equal(result.error.code, 'INVALID_LLM_CONFIG');
+});
+
+test('拒绝非布尔值视觉开关', () => {
+  const document = JSON.parse(validJson());
+  document.data.llmConfig.visionEnabled = 'yes';
   const result = parseAndValidateBackup(JSON.stringify(document));
   assert.equal(result.success, false);
   if (!result.success) assert.equal(result.error.code, 'INVALID_LLM_CONFIG');

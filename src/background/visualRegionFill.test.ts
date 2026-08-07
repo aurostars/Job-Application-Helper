@@ -1,0 +1,397 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { LLMProvider } from '../services/llm/types.ts';
+import type {
+  Message,
+  UserProfile,
+  VisualRegionFillPayload,
+  VisualRegionFillRequestPayload,
+} from '../shared/types.ts';
+import {
+  captureVisibleRegion,
+  handleVisualRegionFill,
+} from './visualRegionFill.ts';
+
+function createProfile(): UserProfile {
+  return {
+    personal: { name: '张三', gender: '', birthDate: '', phone: '', email: '' },
+    education: [{
+      id: 'edu-1',
+      school: 'A',
+      major: 'B',
+      degree: '硕士',
+      startDate: '2022-09',
+      endDate: '2025-06',
+    }],
+    experience: [],
+    projects: [],
+    customInformation: [],
+    skills: [],
+    certifications: [],
+  };
+}
+
+function createPayload(): VisualRegionFillPayload {
+  return {
+    requestId: 'req-1',
+    domain: 'jobs.bytedance.com',
+    image: {
+      base64: 'ZmFrZQ==',
+      mimeType: 'image/png',
+      width: 800,
+      height: 400,
+    },
+    controls: [{
+      controlId: 'ctrl-degree',
+      tagName: 'select',
+      label: '学历',
+      name: 'degree',
+      placeholder: '',
+      options: ['本科', '硕士'],
+      rect: { left: 10, top: 10, width: 120, height: 36 },
+      contextText: '教育经历 学历',
+    }],
+    region: {
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 100,
+      viewportWidth: 1024,
+      viewportHeight: 768,
+    },
+  };
+}
+
+function createRequestPayload(): VisualRegionFillRequestPayload {
+  const { image: _image, ...payload } = createPayload();
+  return payload;
+}
+
+function stubChromeForCapture() {
+  const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+  const created: string[] = [];
+  const sent: Message[] = [];
+
+  (globalThis as { chrome?: unknown }).chrome = {
+    runtime: {
+      getContexts: async () => [],
+      sendMessage: async (message: Message) => {
+        sent.push(message);
+        return {
+          success: true,
+          data: {
+            base64: 'Y3JvcHBlZA==',
+            mimeType: 'image/png',
+            width: 120,
+            height: 60,
+          },
+        };
+      },
+      onMessage: { addListener: () => {} },
+      onInstalled: { addListener: () => {} },
+      getManifest: () => ({ version: 'test' }),
+      openOptionsPage: () => {},
+    },
+    offscreen: {
+      createDocument: async (options: { url: string }) => {
+        created.push(options.url);
+      },
+    },
+    tabs: {
+      captureVisibleTab: async (windowId: number, options: { format: string }) => {
+        assert.equal(windowId, 7);
+        assert.deepEqual(options, { format: 'png' });
+        return 'data:image/png;base64,c2NyZWVuc2hvdA==';
+      },
+    },
+    storage: {
+      local: {
+        get: async () => ({}),
+        set: async () => {},
+        remove: async () => {},
+        clear: async () => {},
+        getBytesInUse: async () => 0,
+        QUOTA_BYTES: 1024,
+      },
+    },
+  };
+
+  return {
+    created,
+    sent,
+    restore: () => {
+      (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    },
+  };
+}
+
+test('视觉模型未开启时 handler 直接返回可读错误', async () => {
+  const response = await handleVisualRegionFill({
+    requestId: 'req-1',
+    domain: 'jobs.bytedance.com',
+    image: { base64: 'ZmFrZQ==', mimeType: 'image/png', width: 10, height: 10 },
+    controls: [],
+    region: { x: 0, y: 0, width: 10, height: 10 },
+  }, {
+    getLLMConfig: async () => ({
+      provider: LLMProvider.CUSTOM,
+      apiKey: 'sk-test',
+      baseUrl: 'https://example.com/v1',
+      model: 'custom-model',
+      visionEnabled: false,
+    }),
+    getUserProfile: async () => null,
+  } as never);
+
+  assert.equal(response.success, false);
+  assert.equal(
+    response.error,
+    '当前自定义模型未开启视觉输入，请在设置中启用视觉能力后重试',
+  );
+  assert.doesNotMatch(
+    response.error || '',
+    /NO_MODEL|PROVIDER_UNSUPPORTED|CUSTOM_VISION_DISABLED/,
+  );
+});
+
+test('captureVisibleRegion 调用截图与 offscreen 裁剪', async () => {
+  const stub = stubChromeForCapture();
+  try {
+    const result = await captureVisibleRegion(7, {
+      x: 10,
+      y: 20,
+      width: 120,
+      height: 60,
+      viewportWidth: 300,
+      viewportHeight: 150,
+    });
+
+    assert.deepEqual(result, {
+      base64: 'Y3JvcHBlZA==',
+      mimeType: 'image/png',
+      width: 120,
+      height: 60,
+    });
+    assert.deepEqual(stub.created, ['src/offscreen/index.html']);
+    assert.deepEqual(stub.sent, [{
+      type: 'CROP_IMAGE_OFFSCREEN',
+      payload: {
+        imageDataUrl: 'data:image/png;base64,c2NyZWVuc2hvdA==',
+        selectionRect: {
+          x: 10,
+          y: 20,
+          width: 120,
+          height: 60,
+          viewportWidth: 300,
+          viewportHeight: 150,
+        },
+      },
+    }]);
+  } finally {
+    stub.restore();
+  }
+});
+
+test('background index 收到 CANCEL_AI_FILL 时会真正中断视觉链路中的模型请求', async () => {
+  const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+  const originalFetch = globalThis.fetch;
+  const payload = createPayload();
+  let aborted = false;
+
+  (globalThis as { chrome?: unknown }).chrome = {
+    runtime: {
+      onMessage: { addListener: () => {} },
+      onInstalled: { addListener: () => {} },
+      openOptionsPage: () => {},
+      getManifest: () => ({ version: 'test' }),
+      getContexts: async () => [],
+      sendMessage: async () => {
+        throw new Error('strict payload 不应触发裁图');
+      },
+    },
+    storage: {
+      local: {
+        get: async (key: string | string[]) => {
+          if (Array.isArray(key)) return {};
+          if (key === 'llmConfig') {
+            return {
+              llmConfig: {
+                provider: LLMProvider.CUSTOM,
+                apiKey: 'sk-test',
+                baseUrl: 'https://example.com/v1',
+                model: 'custom-model',
+                visionEnabled: true,
+              },
+            };
+          }
+          if (key === 'userProfile') {
+            return { userProfile: createProfile() };
+          }
+          return {};
+        },
+        set: async () => {},
+        remove: async () => {},
+        clear: async () => {},
+        getBytesInUse: async () => 0,
+        QUOTA_BYTES: 1024,
+      },
+    },
+  };
+
+  globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
+    const init = args[1] as RequestInit | undefined;
+    const signal = init?.signal;
+
+    return new Promise<Response>((_resolve, reject) => {
+      signal?.addEventListener('abort', () => {
+        aborted = true;
+        reject(new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const moduleUrl = new URL(`./index.ts?abort-test=${Date.now()}`, import.meta.url).href;
+    const backgroundModule = await import(moduleUrl);
+    const inFlight = backgroundModule.handleMessage({
+      type: 'AI_FILL_VISUAL_REGION',
+      payload,
+    } as unknown as Message, {} as chrome.runtime.MessageSender);
+
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    const cancelResponse = await backgroundModule.handleMessage({
+      type: 'CANCEL_AI_FILL',
+      payload: { requestId: payload.requestId },
+    } as unknown as Message, {} as chrome.runtime.MessageSender);
+
+    const response = await inFlight;
+
+    assert.equal(cancelResponse.success, true);
+    assert.deepEqual(cancelResponse.data, { cancelled: true });
+    assert.equal(aborted, true);
+    assert.equal(response.success, false);
+    assert.equal(response.error, 'AI 补填已终止');
+  } finally {
+    (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('background index 会为无图请求补截图后再进入 AI_FILL_VISUAL_REGION 主链路', async () => {
+  const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+  const originalFetch = globalThis.fetch;
+  const payload = createRequestPayload();
+  const sentMessages: Message[] = [];
+
+  (globalThis as { chrome?: unknown }).chrome = {
+    runtime: {
+      onMessage: { addListener: () => {} },
+      onInstalled: { addListener: () => {} },
+      openOptionsPage: () => {},
+      getManifest: () => ({ version: 'test' }),
+      getContexts: async () => [],
+      sendMessage: async (message: Message) => {
+        sentMessages.push(message);
+        return {
+          success: true,
+          data: {
+            base64: 'Y3JvcHBlZA==',
+            mimeType: 'image/png',
+            width: 120,
+            height: 60,
+          },
+        };
+      },
+    },
+    storage: {
+      local: {
+        get: async (key: string | string[]) => {
+          if (Array.isArray(key)) return {};
+          if (key === 'llmConfig') {
+            return {
+              llmConfig: {
+                provider: LLMProvider.CUSTOM,
+                apiKey: 'sk-test',
+                baseUrl: 'https://example.com/v1',
+                model: 'custom-model',
+                visionEnabled: true,
+              },
+            };
+          }
+          if (key === 'userProfile') {
+            return { userProfile: createProfile() };
+          }
+          return {};
+        },
+        set: async () => {},
+        remove: async () => {},
+        clear: async () => {},
+        getBytesInUse: async () => 0,
+        QUOTA_BYTES: 1024,
+      },
+    },
+    tabs: {
+      get: async () => ({ id: 1, url: 'https://jobs.bytedance.com' }),
+      sendMessage: async () => ({ success: true, data: { written: true } }),
+      captureVisibleTab: async () => 'data:image/png;base64,c2NyZWVuc2hvdA==',
+    },
+    offscreen: {
+      createDocument: async () => {},
+    },
+  };
+
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          mappings: [{
+            controlId: 'ctrl-degree',
+            fieldMeaning: '学历',
+            matchedProfilePath: 'education.0.degree',
+            value: '硕士',
+          }],
+        }),
+      },
+    }],
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  try {
+    const moduleUrl = new URL(`./index.ts?route-test=${Date.now()}`, import.meta.url).href;
+    const backgroundModule = await import(moduleUrl);
+    const response = await backgroundModule.handleMessage({
+      type: 'AI_FILL_VISUAL_REGION',
+      payload,
+    } as unknown as Message, { tab: { windowId: 1 } } as chrome.runtime.MessageSender);
+
+    assert.equal(response.success, true);
+    assert.deepEqual(response.data, {
+      mappings: [{
+        controlId: 'ctrl-degree',
+        fieldMeaning: '学历',
+        matchedProfilePath: 'education.0.degree',
+        value: '硕士',
+      }],
+    });
+    assert.deepEqual(sentMessages, [{
+      type: 'CROP_IMAGE_OFFSCREEN',
+      payload: {
+        imageDataUrl: 'data:image/png;base64,c2NyZWVuc2hvdA==',
+        selectionRect: {
+          x: 0,
+          y: 0,
+          width: 200,
+          height: 100,
+          viewportWidth: 1024,
+          viewportHeight: 768,
+        },
+      },
+    }]);
+  } finally {
+    (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    globalThis.fetch = originalFetch;
+  }
+});

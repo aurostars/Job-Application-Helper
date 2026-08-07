@@ -1,5 +1,6 @@
-import type { LLMConfig, ChatMessage, LLMResponse } from './types';
+import type { ChatContentPart, LLMConfig, ChatMessage, LLMResponse } from './types';
 import { LLMProvider, DEFAULT_MAX_TOKENS, MAX_TOKENS_CEILING } from './types.ts';
+import { supportsVisionInput } from './visionCapabilities.ts';
 
 /** 输出被 max_tokens 截断且正文为空时抛出，供上层决定是否加大额度重试 */
 export class TruncatedEmptyOutputError extends Error {
@@ -30,6 +31,8 @@ export class LLMService {
    * 到上限仍失败即放弃，由调用方回退到本地规则解析。
    */
   async chat(messages: ChatMessage[], signal?: AbortSignal): Promise<LLMResponse> {
+    assertVisionMessagesSupported(messages, this.config);
+
     // 旧配置里可能存有更小的 maxTokens，不能让它把额度压到默认值以下
     let budget = Math.min(
       Math.max(this.config.maxTokens ?? 0, DEFAULT_MAX_TOKENS),
@@ -83,7 +86,10 @@ export class LLMService {
       },
       body: JSON.stringify({
         model: this.config.model,
-        messages,
+        messages: messages.map(message => ({
+          ...message,
+          content: toOpenAIContent(message.content),
+        })),
         temperature: this.config.temperature ?? 0.7,
         max_tokens: maxTokens,
       }),
@@ -128,10 +134,13 @@ export class LLMService {
     signal: AbortSignal | undefined,
     maxTokens: number,
   ): Promise<LLMResponse> {
-    const systemMsg = messages.find(m => m.role === 'system')?.content || '';
+    const systemMsg = toClaudeSystemContent(messages.find(m => m.role === 'system')?.content);
     const nonSystemMessages = messages
       .filter(m => m.role !== 'system')
-      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+      .map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: toClaudeContent(m.content),
+      }));
 
     const response = await fetch(`${this.claudeBaseUrl()}/v1/messages`, {
       method: 'POST',
@@ -211,4 +220,58 @@ function extractErrorMessage(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+function assertVisionMessagesSupported(messages: ChatMessage[], config: LLMConfig): void {
+  const hasImageInput = messages.some(message => (
+    Array.isArray(message.content)
+    && message.content.some(part => part.type === 'image')
+  ));
+
+  if (!hasImageInput) return;
+
+  const support = supportsVisionInput(config);
+  if (support.supported) return;
+
+  throw new Error(`当前模型不支持图片输入：${support.reason}`);
+}
+
+function toOpenAIContent(content: ChatMessage['content']) {
+  if (typeof content === 'string') return content;
+
+  return content.map(part => (
+    part.type === 'text'
+      ? { type: 'text', text: part.text }
+      : {
+          type: 'image_url',
+          image_url: { url: `data:${part.mimeType};base64,${part.data}` },
+        }
+  ));
+}
+
+function toClaudeSystemContent(content: ChatMessage['content'] | undefined): string {
+  if (content === undefined) return '';
+  if (typeof content === 'string') return content;
+
+  return content
+    .filter((part): part is Extract<ChatContentPart, { type: 'text' }> => part.type === 'text')
+    .map(part => part.text)
+    .join('\n');
+}
+
+function toClaudeContent(content: ChatMessage['content']) {
+  if (typeof content === 'string') return content;
+
+  return content.map(part => (
+    part.type === 'text'
+      ? { type: 'text', text: part.text }
+      : {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: part.mimeType,
+            data: part.data,
+          },
+        }
+  ));
 }

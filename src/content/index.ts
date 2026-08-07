@@ -2,6 +2,7 @@ import { FormDetector } from './formDetector';
 import { FormFiller, type FillSection } from './formFiller';
 import { OpenQuestionDetector } from './openQuestionDetector';
 import { groupPageScanFields, type PageScanField, type PageScanSection } from './pageScan';
+import { createVisualRegionFillController } from './visualRegionFill.ts';
 import type {
   DetectedField,
   FocusedFieldWriteResult,
@@ -26,8 +27,14 @@ console.log('Content script loaded');
 // 初始化
 const formDetector = new FormDetector();
 const formFiller = new FormFiller();
+const visualRegionFillController = createVisualRegionFillController({
+  sendRuntimeMessage,
+  fillElementValues: (values, shouldContinue) => formFiller.fillElementValues(
+    values as Parameters<FormFiller['fillElementValues']>[0],
+    shouldContinue,
+  ),
+});
 let detectedFields: DetectedField[] = [];
-let aiRegionSelectionCleanup: (() => void) | null = null;
 let lastFocusedControl:
   | HTMLInputElement
   | HTMLTextAreaElement
@@ -276,178 +283,7 @@ function getElementSection(element: Element): FillSection | null {
 }
 
 function startAIRegionSelection() {
-  if (aiRegionSelectionCleanup) {
-    aiRegionSelectionCleanup();
-    return;
-  }
-
-  const overlay = document.createElement('div');
-  const label = document.createElement('div');
-  const tip = document.createElement('div');
-  let selectedRegion: HTMLElement | null = null;
-  let dragStart: { x: number; y: number } | null = null;
-  let dragging = false;
-  let suppressClick = false;
-
-  overlay.style.cssText = 'position:fixed;z-index:1000001;border:3px solid #7657e8;border-radius:8px;background:rgba(118,87,232,.08);pointer-events:none;display:none;box-sizing:border-box;';
-  label.style.cssText = 'position:fixed;z-index:1000002;padding:5px 9px;border-radius:5px;background:#7657e8;color:#fff;font:500 12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;pointer-events:none;display:none;';
-  tip.textContent = '单击自动识别模块，或按住鼠标拖动画框；按 Esc 取消';
-  tip.style.cssText = 'position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:1000003;padding:10px 16px;border-radius:8px;background:rgba(32,33,39,.92);color:#fff;font:500 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.2);pointer-events:none;';
-  document.body.append(overlay, label, tip);
-
-  const updateOverlay = () => {
-    if (!selectedRegion) return;
-    const rect = selectedRegion.getBoundingClientRect();
-    overlay.style.display = 'block';
-    overlay.style.left = `${rect.left}px`;
-    overlay.style.top = `${rect.top}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-    label.style.display = 'block';
-    label.style.left = `${Math.max(8, rect.left)}px`;
-    label.style.top = `${Math.max(8, rect.top - 28)}px`;
-    label.textContent = getRegionName(selectedRegion);
-  };
-
-  const handleMove = (event: MouseEvent) => {
-    if (dragStart) {
-      const distance = Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y);
-      if (distance >= 8) dragging = true;
-      if (dragging) {
-        selectedRegion = null;
-        const left = Math.min(dragStart.x, event.clientX);
-        const top = Math.min(dragStart.y, event.clientY);
-        const width = Math.abs(event.clientX - dragStart.x);
-        const height = Math.abs(event.clientY - dragStart.y);
-        overlay.style.display = 'block';
-        overlay.style.left = `${left}px`;
-        overlay.style.top = `${top}px`;
-        overlay.style.width = `${width}px`;
-        overlay.style.height = `${height}px`;
-        label.style.display = 'block';
-        label.style.left = `${Math.max(8, left)}px`;
-        label.style.top = `${Math.max(8, top - 28)}px`;
-        label.textContent = '自定义补填区域';
-        return;
-      }
-    }
-
-    const target = event.target as Element | null;
-    selectedRegion = target ? findSelectableRegion(target) : null;
-    if (!selectedRegion) {
-      overlay.style.display = 'none';
-      label.style.display = 'none';
-      return;
-    }
-    updateOverlay();
-  };
-
-  const cleanup = () => {
-    document.removeEventListener('mousemove', handleMove, true);
-    document.removeEventListener('mousedown', handleMouseDown, true);
-    document.removeEventListener('mouseup', handleMouseUp, true);
-    document.removeEventListener('click', handleClick, true);
-    document.removeEventListener('keydown', handleKeyDown, true);
-    window.removeEventListener('scroll', updateOverlay, true);
-    overlay.remove();
-    label.remove();
-    tip.remove();
-    aiRegionSelectionCleanup = null;
-  };
-
-  const handleMouseDown = (event: MouseEvent) => {
-    if (event.button !== 0) return;
-    dragStart = { x: event.clientX, y: event.clientY };
-    dragging = false;
-  };
-
-  const handleMouseUp = async (event: MouseEvent) => {
-    if (!dragStart || !dragging) {
-      dragStart = null;
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    const left = Math.min(dragStart.x, event.clientX);
-    const top = Math.min(dragStart.y, event.clientY);
-    const width = Math.abs(event.clientX - dragStart.x);
-    const height = Math.abs(event.clientY - dragStart.y);
-    const selectionRect = new DOMRect(left, top, width, height);
-    const centerTarget = document.elementFromPoint(left + width / 2, top + height / 2);
-    const region = centerTarget ? findSelectableRegion(centerTarget) : null;
-    const section = region ? inferSectionFromRegion(region) : 'all';
-    suppressClick = true;
-    dragStart = null;
-    dragging = false;
-    cleanup();
-    await handleAISectionFill(section, undefined, selectionRect);
-  };
-
-  const handleClick = async (event: MouseEvent) => {
-    if (suppressClick) {
-      suppressClick = false;
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    if (!selectedRegion) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    const region = selectedRegion;
-    const section = inferSectionFromRegion(region);
-    cleanup();
-    await handleAISectionFill(section, region);
-  };
-
-  const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') cleanup();
-  };
-
-  aiRegionSelectionCleanup = cleanup;
-  document.addEventListener('mousedown', handleMouseDown, true);
-  document.addEventListener('mousemove', handleMove, true);
-  document.addEventListener('mouseup', handleMouseUp, true);
-  document.addEventListener('click', handleClick, true);
-  document.addEventListener('keydown', handleKeyDown, true);
-  window.addEventListener('scroll', updateOverlay, true);
-}
-
-function findSelectableRegion(target: Element): HTMLElement | null {
-  const candidates = Array.from(
-    document.querySelectorAll<HTMLElement>('[class*=applyFormModuleWrapper]')
-  ).filter(region => {
-    const rect = region.getBoundingClientRect();
-    return (
-      region.contains(target) &&
-      region.querySelectorAll('input, textarea, select, [role="combobox"]').length > 0 &&
-      rect.width > 250 &&
-      rect.height > 80
-    );
-  });
-
-  return candidates.sort((a, b) => {
-    const rectA = a.getBoundingClientRect();
-    const rectB = b.getBoundingClientRect();
-    return rectA.width * rectA.height - rectB.width * rectB.height;
-  })[0] || target.closest<HTMLElement>('form, section, [class*=form]') || null;
-}
-
-function getRegionName(region: HTMLElement): string {
-  const text = (region.innerText || '').replace(/\s+/g, ' ').trim();
-  return ['基本信息', '教育经历', '实习经历', '工作经历', '项目经历']
-    .find(name => text.includes(name)) || text.slice(0, 24) || '选中区域';
-}
-
-function inferSectionFromRegion(region: HTMLElement): FillSection {
-  const text = (region.innerText || '').replace(/\s+/g, ' ');
-  if (text.includes('基本信息')) return 'personal';
-  if (text.includes('教育经历')) return 'education';
-  if (text.includes('实习经历') || text.includes('工作经历')) return 'experience';
-  if (text.includes('项目经历')) return 'projects';
-  return 'all';
+  visualRegionFillController.beginVisualRegionFill();
 }
 
 async function handleAISectionFill(

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { MessageService } from '../shared/message';
 import type { Message, MessageResponse, UserProfile } from '../shared/types';
+import type { LLMConfig } from '../services/llm/types';
+import { supportsVisionInput } from '../services/llm/visionCapabilities';
 import { buildSidepanelUrl } from '../sidepanel/navigation';
 
 function App() {
@@ -127,6 +129,16 @@ function App() {
 
     setStartingAIRegion(true);
     try {
+      const llmConfigResponse = await MessageService.sendMessage<LLMConfig>({
+        type: 'GET_LLM_CONFIG',
+      });
+      const vision = llmConfigResponse.success && llmConfigResponse.data
+        ? supportsVisionInput(llmConfigResponse.data)
+        : { supported: false as const };
+      if (!vision.supported) {
+        throw new Error('当前模型不支持图片输入，请在设置中切换到支持视觉输入的模型');
+      }
+
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab.id) throw new Error('没有可用的当前页面');
 

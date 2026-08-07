@@ -4,6 +4,8 @@ import type {
   MessageResponse,
   UserProfile,
   ParsedResumeData,
+  VisualRegionFillPayload,
+  VisualRegionFillRequestPayload,
   WebDAVConfig,
 } from '../shared/types.ts';
 import { StorageService } from '../shared/storage.ts';
@@ -36,6 +38,10 @@ import {
 } from '../services/llm/prompts.ts';
 import type { AIFillSectionPayload } from '../services/llm/prompts.ts';
 import type { LLMConfig } from '../services/llm/types.ts';
+import {
+  captureVisibleRegion,
+  handleVisualRegionFill,
+} from './visualRegionFill.ts';
 
 // Background Service Worker 入口
 console.log('Background service worker started');
@@ -75,7 +81,7 @@ chrome.runtime.onMessage.addListener(
 // 处理消息
 export async function handleMessage(
   message: Message,
-  _sender: chrome.runtime.MessageSender
+  sender: chrome.runtime.MessageSender
 ): Promise<MessageResponse> {
   switch (message.type) {
     case 'GET_USER_PROFILE':
@@ -103,6 +109,9 @@ export async function handleMessage(
 
     case 'AI_FILL_SECTION':
       return await handleAIFillSection(message.payload);
+
+    case 'AI_FILL_VISUAL_REGION':
+      return await handleVisualRegionFillRequest(message.payload, sender);
 
     case 'CANCEL_AI_FILL':
       return handleCancelAIFill(message.payload.requestId);
@@ -191,6 +200,52 @@ async function handleWriteFocusedField(
       : 'NO_ACTIVE_TAB';
     return { success: true, data: { written: false, reason } };
   }
+}
+
+async function handleVisualRegionFillRequest(
+  payload: VisualRegionFillPayload | VisualRegionFillRequestPayload,
+  sender: chrome.runtime.MessageSender,
+): Promise<MessageResponse> {
+  const requestId = payload.requestId?.trim();
+  let controller: AbortController | undefined;
+  if (requestId) {
+    controller = new AbortController();
+    aiFillControllers.set(requestId, controller);
+  }
+
+  try {
+    if (isVisualRegionFillPayload(payload)) {
+      return await handleVisualRegionFill(payload, undefined, controller?.signal);
+    }
+
+    const windowId = sender.tab?.windowId;
+    if (typeof windowId !== 'number') {
+      return { success: false, error: '无法获取当前页面截图' };
+    }
+
+    const image = await captureVisibleRegion(windowId, payload.region);
+    if (controller?.signal.aborted) {
+      return { success: false, error: 'AI 补填已终止' };
+    }
+
+    const strictPayload: VisualRegionFillPayload = { ...payload, image };
+    return await handleVisualRegionFill(strictPayload, undefined, controller?.signal);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return { success: false, error: 'AI 补填已终止' };
+    }
+    throw error;
+  } finally {
+    if (requestId) {
+      aiFillControllers.delete(requestId);
+    }
+  }
+}
+
+function isVisualRegionFillPayload(
+  payload: VisualRegionFillPayload | VisualRegionFillRequestPayload,
+): payload is VisualRegionFillPayload {
+  return 'image' in payload && Boolean(payload.image?.base64 && payload.image?.mimeType);
 }
 
 function isRestrictedPage(url: string): boolean {
