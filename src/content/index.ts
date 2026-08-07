@@ -1,6 +1,7 @@
 import { FormDetector } from './formDetector';
 import { FormFiller, type FillSection } from './formFiller';
 import { OpenQuestionDetector } from './openQuestionDetector';
+import { groupPageScanFields, type PageScanField, type PageScanSection } from './pageScan';
 import type {
   DetectedField,
   FocusedFieldWriteResult,
@@ -124,6 +125,82 @@ function initializeDetection() {
 // 处理填充按钮点击
 async function handleFillButtonClick() {
   await fillSection('all');
+}
+
+async function handleAIPageFill() {
+  const status = showAIRegionStatus('正在扫描整页表单...');
+  const requestId = crypto.randomUUID();
+  let cancelled = false;
+
+  status.setCancelHandler(async () => {
+    if (cancelled) return;
+    cancelled = true;
+    status.update('正在终止 AI 扫描填充...');
+    await sendRuntimeMessage({
+      type: 'CANCEL_AI_FILL',
+      payload: { requestId },
+    });
+    status.update('AI 扫描填充已终止', 'warning');
+  });
+
+  try {
+    const response = await sendRuntimeMessage<UserProfile>({
+      type: 'GET_USER_PROFILE',
+    });
+    if (!response.success || !response.data) {
+      throw new Error('请先在插件选项页面中设置个人信息');
+    }
+
+    await formFiller.prepareDynamicSections(response.data, 'all');
+    detectedFields = formDetector.detectFields();
+    const scannedFields = collectPageScanFields();
+    if (scannedFields.length === 0) {
+      status.update('未检测到可扫描的空白表单字段', 'warning');
+      return;
+    }
+
+    const groups = groupPageScanFields(scannedFields);
+    const fieldsByIndex = new Map(scannedFields.map(field => [field.index, field]));
+    let filledCount = 0;
+
+    for (const group of groups) {
+      if (cancelled) return;
+      const fields = group.fields
+        .map(field => fieldsByIndex.get(field.index))
+        .filter((field): field is ScannedPageField => Boolean(field));
+      if (fields.length === 0) continue;
+
+      status.update(`AI 正在扫描${getPageSectionName(group.section)}：${fields.length} 个字段...`);
+      filledCount += await fillPageScanGroup(
+        group.section,
+        fields,
+        requestId,
+        () => !cancelled,
+      );
+    }
+
+    if (cancelled) return;
+
+    const fileInputs = formDetector.findFileInputs();
+    if (fileInputs.length > 0 && response.data.resume) {
+      for (const fileInput of fileInputs) {
+        await formFiller.uploadResume(
+          fileInput,
+          response.data.resume.fileData,
+          response.data.resume.fileName,
+        );
+      }
+    }
+
+    status.update(`AI 扫描填充完成：已填 ${filledCount} 项`, 'success');
+  } catch (error) {
+    if (cancelled) return;
+    console.error('AI page scan fill failed:', error);
+    status.update(
+      `AI 扫描填充失败：${error instanceof Error ? error.message : '未知错误'}`,
+      'error',
+    );
+  }
 }
 
 async function fillSection(section: FillSection) {
@@ -450,6 +527,146 @@ async function handleAISectionFill(
   }
 }
 
+type ScannedPageField = PageScanField & {
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+};
+
+function collectPageScanFields(): ScannedPageField[] {
+  const elements = Array.from(
+    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+      'input:not([type="hidden"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]), textarea, select, [role="combobox"]',
+    ),
+  ).filter(element => {
+    if (element.offsetParent === null || element.disabled) return false;
+    if ('readOnly' in element && element.readOnly && element.getAttribute('role') !== 'combobox') {
+      return false;
+    }
+    return !getControlValue(element);
+  });
+  const rowCounters = new Map<string, number>();
+
+  return elements.map((element, index) => {
+    const container = element.closest<HTMLElement>(
+      '[data-form-field-id], [data-form-field-name], [data-form-field-i18n-name]',
+    );
+    const name = (
+      element.getAttribute('data-form-field-name') ||
+      container?.getAttribute('data-form-field-name') ||
+      element.getAttribute('data-form-field-id') ||
+      container?.getAttribute('data-form-field-id') ||
+      (element as HTMLInputElement).name ||
+      ''
+    ).trim();
+    const label = (
+      element.getAttribute('data-form-field-i18n-name') ||
+      container?.getAttribute('data-form-field-i18n-name') ||
+      container?.querySelector('label')?.textContent ||
+      element.getAttribute('aria-label') ||
+      element.getAttribute('placeholder') ||
+      ''
+    ).trim();
+    const key = `${name}|${label}`;
+    const occurrence = rowCounters.get(key) || 0;
+    rowCounters.set(key, occurrence + 1);
+    const section = toPageScanSection(getElementSection(element));
+    const dateInputs = isDateRangeControl(name, label) && container
+      ? Array.from(container.querySelectorAll('input:not([type="hidden"]), textarea, select'))
+        .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+      : [];
+    const datePosition = dateInputs.indexOf(element);
+    const isDateRange = dateInputs.length > 0;
+    const context = `${getPageSectionName(section)}；${(container?.textContent || element.parentElement?.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 300)}`;
+
+    return {
+      element,
+      index,
+      rowIndex: isDateRange ? Math.floor(occurrence / 2) : occurrence,
+      section,
+      name,
+      label,
+      type: isDateRange
+        ? (datePosition === 1 ? 'date-end' : 'date-start')
+        : (element.getAttribute('role') === 'combobox' ? 'combobox' : element.tagName.toLowerCase()),
+      options: getKnownOptions(label, name),
+      context,
+    };
+  });
+}
+
+function getControlValue(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string {
+  const container = element.closest<HTMLElement>(
+    '[data-form-field-id], [data-form-field-name], [data-form-field-i18n-name]',
+  );
+  return (
+    container?.querySelector('.ud__select__selector__selectItem')?.textContent ||
+    element.value ||
+    ''
+  ).trim();
+}
+
+function isDateRangeControl(name: string, label: string): boolean {
+  return name === 'start_end_time' || label === '起止时间';
+}
+
+function toPageScanSection(section: FillSection | null): PageScanSection {
+  return section && section !== 'all' ? section : 'other';
+}
+
+function getPageSectionName(section: PageScanSection): string {
+  return {
+    personal: '基本信息',
+    education: '教育经历',
+    experience: '实习经历',
+    projects: '项目经历',
+    other: '其它表单',
+  }[section];
+}
+
+async function fillPageScanGroup(
+  section: PageScanSection,
+  fields: ScannedPageField[],
+  requestId: string,
+  shouldContinue: () => boolean,
+): Promise<number> {
+  const response = await sendRuntimeMessage<Record<string, string>>({
+    type: 'AI_FILL_SECTION',
+    payload: {
+      requestId,
+      section,
+      domain: window.location.hostname,
+      fields: fields.map(field => ({
+        index: field.index,
+        rowIndex: field.rowIndex,
+        name: field.name,
+        label: field.label,
+        type: field.type,
+        options: field.options,
+        context: field.context,
+      })),
+    },
+  });
+
+  if (!response.success || !response.data) {
+    throw new Error(response.error || 'AI 未返回扫描结果');
+  }
+
+  const values = Object.entries(response.data)
+    .map(([index, value]) => {
+      const field = fields.find(item => item.index === Number(index));
+      return field ? { element: field.element, value } : null;
+    })
+    .filter((item): item is {
+      element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      value: string;
+    } => Boolean(item))
+    .sort((a, b) => getDateRangeFillPriority(a.element) - getDateRangeFillPriority(b.element));
+
+  return formFiller.fillElementValues(values, shouldContinue);
+}
+
 function showAIRegionStatus(initialText: string) {
   const element = document.createElement('div');
   const textElement = document.createElement('span');
@@ -769,6 +986,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
     }).catch((error) => {
       sendResponse({ success: false, error: error.message });
+    });
+    return true;
+  }
+
+  if (message.type === 'START_AI_PAGE_FILL') {
+    handleAIPageFill().then(() => {
+      sendResponse({ success: true });
+    }).catch((error) => {
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : 'AI 扫描填充失败',
+      });
     });
     return true;
   }

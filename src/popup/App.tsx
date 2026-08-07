@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { MessageService } from '../shared/message';
 import type { Message, MessageResponse, UserProfile } from '../shared/types';
-import { buildSidepanelUrl, type SidepanelView } from '../sidepanel/navigation';
+import { buildSidepanelUrl } from '../sidepanel/navigation';
 
 function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [filling, setFilling] = useState(false);
+  const [aiScanning, setAiScanning] = useState(false);
   const [startingAIRegion, setStartingAIRegion] = useState(false);
-  const [openingView, setOpeningView] = useState<SidepanelView | null>(null);
+  const [openingView, setOpeningView] = useState(false);
   const [detectedFields, setDetectedFields] = useState(0);
 
   useEffect(() => {
@@ -81,6 +82,38 @@ function App() {
     }
   };
 
+  const handleAIScanFill = async () => {
+    if (!profile) {
+      alert('请先设置个人信息！');
+      openOptions();
+      return;
+    }
+
+    setAiScanning(true);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab.id) {
+        throw new Error('No active tab');
+      }
+
+      const response = await sendMessageToActiveTab(tab.id, {
+        type: 'START_AI_PAGE_FILL',
+      });
+
+      if (!response.success) {
+        alert('AI 扫描填充失败：' + (response.error || '未知错误'));
+        return;
+      }
+
+      window.close();
+    } catch (error) {
+      console.error('AI scan fill error:', error);
+      alert('启动 AI 扫描填充时出错');
+    } finally {
+      setAiScanning(false);
+    }
+  };
+
   const openOptions = () => {
     chrome.runtime.openOptionsPage();
   };
@@ -111,18 +144,18 @@ function App() {
     }
   };
 
-  const handleOpenSidePanel = async (view: SidepanelView) => {
-    setOpeningView(view);
+  const handleOpenSidePanel = async () => {
+    setOpeningView(true);
     try {
-      await openSidePanelFallbackWindow(view);
+      await openSidePanelFallbackWindow();
       window.close();
     } catch (error) {
       alert(error instanceof Error ? error.message : '打开资料窗口失败');
-      setOpeningView(null);
+      setOpeningView(false);
     }
   };
 
-  const openSidePanelFallbackWindow = async (view: SidepanelView) => {
+  const openSidePanelFallbackWindow = async () => {
     const currentWindow = await chrome.windows.getCurrent();
     const width = 420;
     const height = Math.max(640, Math.min(900, currentWindow.height || 800));
@@ -134,7 +167,6 @@ function App() {
     await chrome.windows.create({
       url: chrome.runtime.getURL(buildSidepanelUrl({
         targetWindowId: currentWindow.id,
-        view,
       })),
       type: 'popup',
       width,
@@ -241,28 +273,30 @@ function App() {
 
         <div className="popup-actions">
           <button
-            onClick={() => void handleOpenSidePanel('profile')}
-            disabled={openingView !== null}
+            onClick={() => void handleOpenSidePanel()}
+            disabled={openingView}
             className="button button-secondary"
           >
-            {openingView === 'profile' ? '正在打开浮窗...' : '打开信息浮窗'}
+            {openingView ? '正在打开浮窗...' : '打开信息浮窗'}
           </button>
 
-          <button
-            onClick={() => void handleOpenSidePanel('applications')}
-            disabled={openingView !== null}
-            className="button button-secondary"
-          >
-            {openingView === 'applications' ? '正在打开记录...' : '打开投递记录'}
-          </button>
+          <div className="fill-button-pair">
+            <button
+              onClick={handleFillForm}
+              disabled={!profile || filling || aiScanning || startingAIRegion}
+              className="button button-primary"
+            >
+              {filling ? '填充中...' : '快速填充'}
+            </button>
 
-          <button
-            onClick={handleFillForm}
-            disabled={!profile || filling || startingAIRegion}
-            className="button button-primary"
-          >
-            {filling ? '填充中...' : '一键填充表单'}
-          </button>
+            <button
+              onClick={handleAIScanFill}
+              disabled={!profile || filling || aiScanning || startingAIRegion}
+              className="button button-ai"
+            >
+              {aiScanning ? '扫描中...' : 'AI 扫描填充'}
+            </button>
+          </div>
 
           <button
             onClick={handleStartAIRegionFill}

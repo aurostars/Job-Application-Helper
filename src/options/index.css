@@ -582,34 +582,6 @@ textarea:focus {
   font-weight: 650;
 }
 
-.application-sync-settings {
-  display: grid;
-  gap: 18px;
-}
-
-.application-sync-settings .settings-description {
-  margin-bottom: 0;
-}
-
-.application-sync-card {
-  padding: 18px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-panel);
-  background: #f8f9fb;
-}
-
-.application-sync-card h3 {
-  margin: 0 0 16px;
-  color: #374151;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.application-sync-settings .info-note,
-.application-sync-settings .data-notice {
-  margin-top: 0;
-}
-
 .data-sync-settings {
   display: grid;
   gap: 34px;

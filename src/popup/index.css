@@ -178,6 +178,12 @@ button {
   gap: 8px;
 }
 
+.fill-button-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .button {
   min-height: 42px;
   padding: 10px 16px;
@@ -214,6 +220,15 @@ button {
 
 .button-primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
+}
+
+.button-ai {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+}
+
+.button-ai:hover:not(:disabled) {
+  background: linear-gradient(135deg, #5a6fd8, #6a3f91);
 }
 
 .button-tonal {

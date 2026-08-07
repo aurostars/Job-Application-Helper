@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MessageService } from '../shared/message';
 import type {
-  ApplicationRecord,
-  ApplicationStatus,
   CustomInformation,
   EducationInfo,
   ExperienceInfo,
@@ -12,9 +10,7 @@ import type {
   UserProfile,
 } from '../shared/types';
 import {
-  getInitialSidepanelView,
   getTargetWindowIdFromSearch,
-  type SidepanelView,
 } from './navigation';
 
 type Status = {
@@ -80,26 +76,14 @@ const reasonText: Record<FocusedFieldFailureReason, string> = {
 };
 
 const targetWindowId = getTargetWindowIdFromSearch(window.location.search);
-const initialView = getInitialSidepanelView(window.location.search);
 const defaultStatusText = '先点击网页输入框，再点击下方信息字段';
 const hasTargetWindowId = typeof targetWindowId === 'number';
-const applicationStatusTone: Record<ApplicationStatus, 'neutral' | 'info' | 'success' | 'danger'> = {
-  待投递: 'neutral',
-  已投递: 'info',
-  笔试: 'info',
-  面试中: 'info',
-  已结束: 'neutral',
-  已拒绝: 'danger',
-  已录用: 'success',
-};
 
 export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [applicationRecords, setApplicationRecords] = useState<ApplicationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [workingKey, setWorkingKey] = useState<string | null>(null);
   const [pipWindow, setPipWindow] = useState<Window | null>(null);
-  const [activeView, setActiveView] = useState<SidepanelView>(initialView);
   const [status, setStatus] = useState<Status>({
     kind: 'idle',
     text: defaultStatusText,
@@ -111,7 +95,7 @@ export default function App() {
       changes: Record<string, chrome.storage.StorageChange>,
       areaName: string
     ) => {
-      if (areaName === 'local' && (changes.userProfile || changes.applicationRecords)) {
+      if (areaName === 'local' && changes.userProfile) {
         void loadInitialData();
       }
     };
@@ -121,19 +105,11 @@ export default function App() {
 
   const loadInitialData = async () => {
     setLoading(true);
-    const [profileResponse, applicationResponse] = await Promise.all([
-      MessageService.sendMessage<UserProfile>({
-        type: 'GET_USER_PROFILE',
-      }),
-      MessageService.sendMessage<ApplicationRecord[]>({
-        type: 'GET_APPLICATION_RECORDS',
-      }),
-    ]);
+    const profileResponse = await MessageService.sendMessage<UserProfile>({
+      type: 'GET_USER_PROFILE',
+    });
 
     setProfile(profileResponse.success && profileResponse.data ? profileResponse.data : null);
-    setApplicationRecords(
-      applicationResponse.success && applicationResponse.data ? applicationResponse.data : [],
-    );
     setLoading(false);
   };
 
@@ -245,7 +221,7 @@ export default function App() {
     return <main className="panel-state">正在加载信息...</main>;
   }
 
-  if (activeView === 'profile' && !profile) {
+  if (!profile) {
     return (
       <main className="panel-state">
         <h1>网申信息浮窗</h1>
@@ -261,45 +237,20 @@ export default function App() {
     <main className="panel">
       <header className="panel-header">
         <div>
-          <h1>{activeView === 'profile' ? '网申信息浮窗' : '投递记录'}</h1>
-          <p>
-            {activeView === 'profile'
-              ? '点击网页输入框，再点击信息字段'
-              : '查看本地保存的投递状态与跟进备注'}
-          </p>
+            <h1>网申信息浮窗</h1>
+            <p>点击网页输入框，再点击信息字段</p>
         </div>
         <div className="header-actions">
-          {activeView === 'profile' && (
-            <button className="pip-button" onClick={handlePictureInPicture}>
-              {pipWindow && !pipWindow.closed ? '退出置顶' : '置顶小窗'}
-            </button>
-          )}
+          <button className="pip-button" onClick={handlePictureInPicture}>
+            {pipWindow && !pipWindow.closed ? '退出置顶' : '置顶小窗'}
+          </button>
           <button className="settings-button" onClick={() => chrome.runtime.openOptionsPage()}>
             设置
           </button>
         </div>
       </header>
 
-      <div className="view-switcher" role="tablist" aria-label="sidepanel 视图切换">
-        <button
-          className={`view-switcher-button ${activeView === 'profile' ? 'is-active' : ''}`}
-          onClick={() => setActiveView('profile')}
-          role="tab"
-          aria-selected={activeView === 'profile'}
-        >
-          信息浮窗
-        </button>
-        <button
-          className={`view-switcher-button ${activeView === 'applications' ? 'is-active' : ''}`}
-          onClick={() => setActiveView('applications')}
-          role="tab"
-          aria-selected={activeView === 'applications'}
-        >
-          投递记录
-        </button>
-      </div>
-
-      {activeView === 'profile' && profile && (
+      {profile && (
         <>
           <div className={`status status-${status.kind}`}>
             <span>{status.text}</span>
@@ -345,97 +296,8 @@ export default function App() {
         </>
       )}
 
-      {activeView === 'applications' && (
-        <ApplicationRecordsSection records={applicationRecords} />
-      )}
     </main>
   );
-}
-
-function ApplicationRecordsSection({ records }: { records: ApplicationRecord[] }) {
-  if (records.length === 0) {
-    return (
-      <section className="record-section">
-        <div className="application-empty-state">
-          <h2>还没有投递记录</h2>
-          <p>后续在插件中保存投递信息后，这里会按最新更新时间展示进度。</p>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="application-list" aria-label="投递记录列表">
-      {records.map((record) => (
-        <article className="application-card" key={record.id}>
-          <div className="application-card-header">
-            <div>
-              <h2>{record.jobTitle || '未命名岗位'}</h2>
-              <p>{record.companyName || '未知公司'}</p>
-            </div>
-            <span className={`status-chip tone-${applicationStatusTone[record.status]}`}>
-              {record.status}
-            </span>
-          </div>
-
-          <dl className="application-meta">
-            <div>
-              <dt>来源</dt>
-              <dd>{record.siteName || '未知站点'}</dd>
-            </div>
-            <div>
-              <dt>更新时间</dt>
-              <dd>{formatDateTime(record.updatedAt)}</dd>
-            </div>
-            {record.city && (
-              <div>
-                <dt>城市</dt>
-                <dd>{record.city}</dd>
-              </div>
-            )}
-            {record.salaryText && (
-              <div>
-                <dt>薪资</dt>
-                <dd>{record.salaryText}</dd>
-              </div>
-            )}
-            {record.contactName && (
-              <div>
-                <dt>联系人</dt>
-                <dd>{record.contactName}</dd>
-              </div>
-            )}
-            {record.appliedAt && (
-              <div>
-                <dt>投递时间</dt>
-                <dd>{formatDateTime(record.appliedAt)}</dd>
-              </div>
-            )}
-          </dl>
-
-          {record.notes?.trim() && (
-            <div className="application-notes">
-              <div className="application-notes-label">备注</div>
-              <p>{record.notes.trim()}</p>
-            </div>
-          )}
-        </article>
-      ))}
-    </section>
-  );
-}
-
-function formatDateTime(value?: string): string {
-  if (!value) return '未记录';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date);
 }
 
 function CustomInformationSection({

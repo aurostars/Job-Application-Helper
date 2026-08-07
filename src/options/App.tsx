@@ -10,7 +10,6 @@ import { AISettings } from './AISettings';
 import { EducationSection } from './EducationSection';
 import { ExperienceSection } from './ExperienceSection';
 import { DataSyncSettings } from './DataSyncSettings';
-import { ApplicationSyncSettings } from './ApplicationSyncSettings';
 import { parsePDF } from '../parsers/pdfParser';
 import { parseDOCX } from '../parsers/docxParser';
 
@@ -370,12 +369,6 @@ function App() {
           >
             数据与同步
           </button>
-          <button
-            onClick={() => setActiveTab('application-sync')}
-            className={activeTab === 'application-sync' ? 'options-tab active' : 'options-tab'}
-          >
-            投递记录同步
-          </button>
         </nav>
 
         <div className="options-panel">
@@ -699,11 +692,7 @@ function App() {
             <DataSyncSettings onDataChanged={handleExternalDataChange} />
           )}
 
-          {activeTab === 'application-sync' && (
-            <ApplicationSyncSettings onDataChanged={handleExternalDataChange} />
-          )}
-
-          {activeTab !== 'ai' && activeTab !== 'data-sync' && activeTab !== 'application-sync' && (
+          {activeTab !== 'ai' && activeTab !== 'data-sync' && (
             <div className="options-actions">
             <button onClick={handleSave} disabled={saving} className="btn btn-primary">
               {saving ? '保存中...' : '保存设置'}
