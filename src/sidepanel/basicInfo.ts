@@ -3,7 +3,6 @@ import type { PersonalInfo } from '../shared/types.ts';
 export type BasicInfoField = {
   key: keyof PersonalInfo;
   label: string;
-  singleLinePreview?: boolean;
 };
 
 export const BASIC_INFO_FIELDS: BasicInfoField[] = [
@@ -18,7 +17,7 @@ export const BASIC_INFO_FIELDS: BasicInfoField[] = [
   { key: 'hometown', label: '籍贯' },
   { key: 'currentAddress', label: '现居地' },
   { key: 'idCard', label: '身份证号' },
-  { key: 'selfEvaluation', label: '自我评价', singleLinePreview: true },
+  { key: 'selfEvaluation', label: '自我评价' },
 ];
 
 export function toSingleLinePreview(value: string, maxChars = 24): string {
@@ -30,15 +29,16 @@ export function toSingleLinePreview(value: string, maxChars = 24): string {
 export function buildBasicInfoItems(personal: PersonalInfo) {
   return BASIC_INFO_FIELDS.map(field => {
     const raw = String(personal[field.key] ?? '').trim();
-    const singleLinePreview = Boolean(field.singleLinePreview);
+    const displayValue = field.key === 'selfEvaluation'
+      ? toSingleLinePreview(raw, 18)
+      : raw;
 
     return {
       key: field.key,
       label: field.label,
       value: raw,
-      displayValue: singleLinePreview ? toSingleLinePreview(raw, 18) : raw,
+      displayValue,
       empty: raw === '',
-      singleLinePreview,
     };
   });
 }

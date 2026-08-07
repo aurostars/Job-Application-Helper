@@ -32,7 +32,7 @@ test('自我评价摘要固定追加六个点', () => {
   assert.equal(toSingleLinePreview('简短内容', 20), '简短内容');
 });
 
-test('buildBasicInfoItems 保留完整值并给自我评价生成摘要', () => {
+test('buildBasicInfoItems 保留完整值并给自我评价生成六个点摘要', () => {
   const personal = {
     name: '林知远',
     gender: '男',
@@ -47,5 +47,4 @@ test('buildBasicInfoItems 保留完整值并给自我评价生成摘要', () => 
 
   assert.equal(selfEvaluation?.value, '具备扎实的软件开发基础和完整的项目实践经历');
   assert.match(selfEvaluation?.displayValue || '', /\.\.\.\.\.\.$/);
-  assert.equal(selfEvaluation?.singleLinePreview, true);
 });

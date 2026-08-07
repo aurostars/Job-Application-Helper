@@ -274,12 +274,6 @@ textarea {
   line-height: 1.5;
 }
 
-.field-value-single-line {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 .empty-value {
   color: #a1a1aa;
 }

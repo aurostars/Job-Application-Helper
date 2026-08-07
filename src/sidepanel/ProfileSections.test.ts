@@ -24,28 +24,39 @@ const profile: UserProfile = {
 
 test('ProfileSections 把基本信息排在教育经历之前', () => {
   const html = renderToStaticMarkup(
-    <ProfileSections profile={profile} workingKey={null} onFieldClick={() => {}} />
+    React.createElement(ProfileSections, {
+      profile,
+      workingKey: null,
+      onFieldClick: () => {},
+    })
   );
+
   assert.ok(html.indexOf('基本信息') < html.indexOf('教育经历'));
 });
 
 test('空值字段显示未填写并禁用按钮', () => {
   const html = renderToStaticMarkup(
-    <ProfileSections
-      profile={{ ...profile, personal: { ...profile.personal, wechat: '' } }}
-      workingKey={null}
-      onFieldClick={() => {}}
-    />
+    React.createElement(ProfileSections, {
+      profile: { ...profile, personal: { ...profile.personal, wechat: '' } },
+      workingKey: null,
+      onFieldClick: () => {},
+    })
   );
+
   assert.match(html, /微信号/);
   assert.match(html, /未填写/);
   assert.match(html, /disabled/);
 });
 
-test('自我评价使用单行摘要类名和六个点摘要', () => {
+test('自我评价仅依赖数据层六个点摘要', () => {
   const html = renderToStaticMarkup(
-    <ProfileSections profile={profile} workingKey={null} onFieldClick={() => {}} />
+    React.createElement(ProfileSections, {
+      profile,
+      workingKey: null,
+      onFieldClick: () => {},
+    })
   );
-  assert.match(html, /field-value-single-line/);
-  assert.match(html, /(\.\.\.\.\.\.)/);
+
+  assert.match(html, /具备扎实的软件开发基础和完整的项目....../);
+  assert.doesNotMatch(html, /field-value-single-line/);
 });

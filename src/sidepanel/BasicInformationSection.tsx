@@ -33,15 +33,7 @@ export function BasicInformationSection({
               title={item.empty ? '该字段未填写' : '点击写入网页当前输入框'}
             >
               <span className="field-label">{item.label}</span>
-              <span
-                className={
-                  item.singleLinePreview
-                    ? 'field-value field-value-single-line'
-                    : item.empty
-                      ? 'field-value empty-value'
-                      : 'field-value'
-                }
-              >
+              <span className={item.empty ? 'field-value empty-value' : 'field-value'}>
                 {item.empty ? '未填写' : item.displayValue}
               </span>
               {workingKey === key && <span className="field-working">写入中</span>}
