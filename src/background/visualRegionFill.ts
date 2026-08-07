@@ -5,8 +5,6 @@ import {
   parseVisualRegionFillResponse,
   validateVisualRegionMappings,
 } from '../services/llm/visualRegionFill.ts';
-import { supportsVisionInput } from '../services/llm/visionCapabilities.ts';
-import type { VisionSupportReason } from '../services/llm/visionCapabilities.ts';
 import { StorageService } from '../shared/storage.ts';
 import type {
   MessageResponse,
@@ -71,13 +69,8 @@ export async function handleVisualRegionFill(
     if (!config?.apiKey?.trim()) {
       return { success: false, error: '请先在设置中配置 AI 服务' };
     }
-
-    const vision = supportsVisionInput(config);
-    if (!vision.supported) {
-      return {
-        success: false,
-        error: mapVisionSupportError(vision.reason),
-      };
+    if (!config.model.trim()) {
+      return { success: false, error: '请先在设置中填写模型名称' };
     }
 
     const profile = await deps.getUserProfile();
@@ -164,18 +157,6 @@ function normalizeRect(selectionRect: DOMRectLike): VisualRegionSelectionRect {
   }
 
   return normalized;
-}
-
-function mapVisionSupportError(reason: VisionSupportReason): string {
-  switch (reason) {
-    case 'NO_MODEL':
-      return '请先在设置中选择支持图片输入的模型';
-    case 'CUSTOM_VISION_DISABLED':
-      return '当前自定义模型未开启视觉输入，请在设置中启用视觉能力后重试';
-    case 'PROVIDER_UNSUPPORTED':
-    default:
-      return '当前模型不支持图片输入，请在设置中切换到支持视觉输入的模型';
-  }
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

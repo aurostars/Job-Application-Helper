@@ -255,13 +255,16 @@ test('Claude 接口会把图片消息序列化为 image base64 block', async () 
   }
 });
 
-test('无视觉模型收到 image part 时立即报错且不发请求', async () => {
+test('即使模型未在本地白名单中，收到 image part 也会继续发请求', async () => {
   const originalFetch = globalThis.fetch;
   let fetchCalled = false;
 
   globalThis.fetch = (async () => {
     fetchCalled = true;
-    return new Response('{}', { status: 200 });
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    }), { status: 200 });
   }) as typeof globalThis.fetch;
 
   try {
@@ -272,6 +275,39 @@ test('无视觉模型收到 image part 时立即报错且不发请求', async ()
       model: 'qwen-plus',
     });
 
+    const result = await llm.chat([{
+      role: 'user',
+      content: [
+        { type: 'text', text: '看图' },
+        { type: 'image', mimeType: 'image/png', data: 'ZmFrZQ==' },
+      ],
+    }]);
+    assert.equal(result.content, 'ok');
+    assert.equal(fetchCalled, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('服务端返回图片能力不支持时统一提示当前模型不支持图片输入', async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async () => (
+    new Response(JSON.stringify({
+      error: {
+        message: 'This model does not support image input or image_url content.',
+      },
+    }), { status: 400 })
+  )) as typeof globalThis.fetch;
+
+  try {
+    const llm = new LLMService({
+      provider: LLMProvider.MIMO,
+      apiKey: 'sk-test',
+      baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+      model: 'mimo-v2.5',
+    });
+
     await assert.rejects(
       llm.chat([{
         role: 'user',
@@ -280,9 +316,8 @@ test('无视觉模型收到 image part 时立即报错且不发请求', async ()
           { type: 'image', mimeType: 'image/png', data: 'ZmFrZQ==' },
         ],
       }]),
-      /当前模型不支持图片输入：PROVIDER_UNSUPPORTED/,
+      /当前模型不支持图片输入/,
     );
-    assert.equal(fetchCalled, false);
   } finally {
     globalThis.fetch = originalFetch;
   }

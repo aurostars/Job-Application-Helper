@@ -125,7 +125,7 @@ function stubChromeForCapture() {
   };
 }
 
-test('视觉模型未开启时 handler 直接返回可读错误', async () => {
+test('不再在 background 层根据视觉能力预检查阻断请求', async () => {
   const response = await handleVisualRegionFill({
     requestId: 'req-1',
     domain: 'jobs.bytedance.com',
@@ -140,13 +140,24 @@ test('视觉模型未开启时 handler 直接返回可读错误', async () => {
       model: 'custom-model',
       visionEnabled: false,
     }),
-    getUserProfile: async () => null,
+    getUserProfile: async () => ({
+      personal: { name: '张三' },
+      education: [],
+      experience: [],
+      projects: [],
+      customInformation: [],
+      skills: [],
+      certifications: [],
+    }),
+    createLLM: () => ({
+      chat: async () => ({ content: JSON.stringify({ mappings: [] }) }),
+    }),
   } as never);
 
   assert.equal(response.success, false);
   assert.equal(
     response.error,
-    '当前自定义模型未开启视觉输入，请在设置中启用视觉能力后重试',
+    'AI 未返回可写入的可靠结果',
   );
   assert.doesNotMatch(
     response.error || '',

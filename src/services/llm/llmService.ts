@@ -1,6 +1,5 @@
 import type { ChatContentPart, LLMConfig, ChatMessage, LLMResponse } from './types';
 import { LLMProvider, DEFAULT_MAX_TOKENS, MAX_TOKENS_CEILING } from './types.ts';
-import { supportsVisionInput } from './visionCapabilities.ts';
 
 /** 输出被 max_tokens 截断且正文为空时抛出，供上层决定是否加大额度重试 */
 export class TruncatedEmptyOutputError extends Error {
@@ -31,8 +30,6 @@ export class LLMService {
    * 到上限仍失败即放弃，由调用方回退到本地规则解析。
    */
   async chat(messages: ChatMessage[], signal?: AbortSignal): Promise<LLMResponse> {
-    assertVisionMessagesSupported(messages, this.config);
-
     // 旧配置里可能存有更小的 maxTokens，不能让它把额度压到默认值以下
     let budget = Math.min(
       Math.max(this.config.maxTokens ?? 0, DEFAULT_MAX_TOKENS),
@@ -98,7 +95,9 @@ export class LLMService {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`LLM API error (${response.status}): ${extractErrorMessage(error)}`);
+      throw normalizeLLMRequestError(
+        `LLM API error (${response.status}): ${extractErrorMessage(error)}`,
+      );
     }
 
     const data = await response.json();
@@ -106,7 +105,7 @@ export class LLMService {
     // 部分国产平台（如智谱、MiniMax）在 HTTP 200 下用 body 内的错误码报错
     const inlineError = data.error?.message ?? data.base_resp?.status_msg;
     if (inlineError && !data.choices?.length) {
-      throw new Error(`LLM API error: ${inlineError}`);
+      throw normalizeLLMRequestError(`LLM API error: ${inlineError}`);
     }
 
     const content = data.choices?.[0]?.message?.content;
@@ -163,7 +162,9 @@ export class LLMService {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Claude API error (${response.status}): ${extractErrorMessage(error)}`);
+      throw normalizeLLMRequestError(
+        `Claude API error (${response.status}): ${extractErrorMessage(error)}`,
+      );
     }
 
     // 中转站地址填错时常返回 200 + 网站 HTML，这里给出可定位的提示而非 JSON 解析错误
@@ -222,18 +223,27 @@ function extractErrorMessage(raw: string): string {
   }
 }
 
-function assertVisionMessagesSupported(messages: ChatMessage[], config: LLMConfig): void {
-  const hasImageInput = messages.some(message => (
-    Array.isArray(message.content)
-    && message.content.some(part => part.type === 'image')
-  ));
+function normalizeLLMRequestError(message: string): Error {
+  return isImageUnsupportedError(message)
+    ? new Error('当前模型不支持图片输入')
+    : new Error(message);
+}
 
-  if (!hasImageInput) return;
-
-  const support = supportsVisionInput(config);
-  if (support.supported) return;
-
-  throw new Error(`当前模型不支持图片输入：${support.reason}`);
+function isImageUnsupportedError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  const hints = [
+    'does not support image',
+    'doesn\'t support image',
+    'unsupported image',
+    'image input',
+    'image_url',
+    'vision',
+    'multimodal',
+    'multi-modal',
+    'input_image',
+    'unsupported content type',
+  ];
+  return hints.some(hint => normalized.includes(hint));
 }
 
 function toOpenAIContent(content: ChatMessage['content']) {
