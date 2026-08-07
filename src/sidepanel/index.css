@@ -194,8 +194,47 @@ textarea {
   user-select: none;
 }
 
+.record-section > summary::-webkit-details-marker {
+  display: none;
+}
+
 .record-section > summary:hover {
   background: #f8f9fb;
+}
+
+.section-summary-title {
+  min-width: 0;
+}
+
+.section-summary-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--color-muted);
+  flex-shrink: 0;
+}
+
+.section-toggle-chevron {
+  width: 16px;
+  height: 16px;
+  transform-origin: center;
+  transition: transform 160ms ease;
+}
+
+.record-section[open] .section-toggle-chevron {
+  transform: rotate(90deg);
+}
+
+.record-section:not([open]) .section-toggle-chevron {
+  transform: rotate(0deg);
 }
 
 .count {

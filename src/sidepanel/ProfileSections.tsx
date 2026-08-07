@@ -7,6 +7,7 @@ import type {
   UserProfile,
 } from '../shared/types.ts';
 import { BasicInformationSection } from './BasicInformationSection.tsx';
+import { SectionSummary } from './SectionSummary.tsx';
 
 type FieldSpec<T> = {
   key: keyof T;
@@ -106,10 +107,7 @@ function CustomInformationSection({
 }): React.JSX.Element {
   return (
     <details className="record-section" open>
-      <summary>
-        <span>自定义信息</span>
-        <span className="count">{records.length}</span>
-      </summary>
+      <SectionSummary title="自定义信息" count={records.length} />
       {records.length === 0 ? (
         <p className="empty-text">暂无自定义信息</p>
       ) : (
@@ -158,10 +156,7 @@ function RecordSection<T extends { id: string }>({
 }): React.JSX.Element {
   return (
     <details className="record-section" open>
-      <summary>
-        <span>{title}</span>
-        <span className="count">{records.length}</span>
-      </summary>
+      <SectionSummary title={title} count={records.length} />
       {records.length === 0 ? (
         <p className="empty-text">暂无{title}</p>
       ) : (

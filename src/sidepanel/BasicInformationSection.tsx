@@ -1,6 +1,7 @@
 import React from 'react';
 import type { PersonalInfo } from '../shared/types.ts';
 import { buildBasicInfoItems } from './basicInfo.ts';
+import { SectionSummary } from './SectionSummary.tsx';
 
 type BasicInformationSectionProps = {
   personal: PersonalInfo;
@@ -17,10 +18,7 @@ export function BasicInformationSection({
 
   return (
     <details className="record-section" open>
-      <summary>
-        <span>基本信息</span>
-        <span className="count">{items.length}</span>
-      </summary>
+      <SectionSummary title="基本信息" count={items.length} />
       <div className="field-list">
         {items.map((item) => {
           const key = `基本信息-${String(item.key)}`;
