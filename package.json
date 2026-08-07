@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build && node scripts/post-build.js",
     "package:extension": "npm run build && node scripts/package-extension.js",
     "lint": "oxlint",
-    "test": "node --experimental-strip-types --test src/shared/backup-sync.test.ts src/utils/resume-parse.test.ts src/services/llm/visionCapabilities.test.ts src/services/llm/llm-service.test.ts src/services/llm/visualRegionFill.test.ts src/background/visualRegionFill.test.ts src/content/visualRegionFill.test.ts src/offscreen/imageCrop.test.ts src/parsers/offscreen-routing.test.ts src/content/pageScan.test.ts && npx --yes tsx --test src/sidepanel/basicInfo.test.ts src/sidepanel/ProfileSections.test.ts src/sidepanel/navigation.test.ts",
+    "test:sidepanel": "tsx --test src/sidepanel/basicInfo.test.ts src/sidepanel/ProfileSections.test.ts src/sidepanel/navigation.test.ts",
+    "test": "node --experimental-strip-types --test src/shared/backup-sync.test.ts src/shared/packageScripts.test.ts src/utils/resume-parse.test.ts src/services/llm/visionCapabilities.test.ts src/services/llm/llm-service.test.ts src/services/llm/visualRegionFill.test.ts src/background/visualRegionFill.test.ts src/content/visualRegionFill.test.ts src/offscreen/imageCrop.test.ts src/parsers/offscreen-routing.test.ts src/content/pageScan.test.ts && npm run test:sidepanel",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "canvas": "^3.2.3",
     "oxlint": "^1.71.0",
+    "tsx": "^4.23.10",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
   }

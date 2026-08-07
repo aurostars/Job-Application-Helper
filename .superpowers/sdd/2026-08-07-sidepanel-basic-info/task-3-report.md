@@ -159,3 +159,105 @@ npm run build:
 ## concerns
 
 - 当前 `package.json` 中的侧边栏测试使用 `npx --yes tsx --test ...`，原因是 Node 26 下 `node --experimental-strip-types --test` 不能直接加载 `.tsx` 依赖链。现在脚本已经可运行，但它仍依赖 `npx` 拉起 `tsx` 运行器；如果后续希望把测试环境完全收敛到仓库内，建议再单独决定是否把 `tsx` 固化为 devDependency，或统一迁移测试基建。
+
+## Review follow-up：修复 `npm test` 对 `npx --yes tsx` 的依赖
+
+### finding
+
+review 指出 `/Users/bytedance/Downloads/网申/Job-Application-Helper/.worktrees/sidepanel-basic-info/package.json` 的 `npm test` 仍依赖：
+
+```bash
+npx --yes tsx --test ...
+```
+
+这会在测试时触发临时下载，不满足“使用仓库内、受版本控制的依赖与脚本”的要求。
+
+### Red
+
+先新增 `/Users/bytedance/Downloads/网申/Job-Application-Helper/.worktrees/sidepanel-basic-info/src/shared/packageScripts.test.ts`，断言：
+
+- `npm test` 不包含 `npx`
+- sidepanel 测试通过仓库脚本调用本地 `tsx`
+- `package.json` 声明 `tsx` 为 devDependency
+- `package-lock.json` 锁定 `node_modules/tsx`
+
+执行：
+
+```bash
+node --experimental-strip-types --test src/shared/packageScripts.test.ts
+```
+
+首次按预期失败，失败点是 `package.json` 里的 `test` 脚本仍包含 `npx --yes tsx`。
+
+### Green
+
+修复如下：
+
+1. 在 `/Users/bytedance/Downloads/网申/Job-Application-Helper/.worktrees/sidepanel-basic-info/package.json` 新增：
+
+```json
+"test:sidepanel": "tsx --test src/sidepanel/basicInfo.test.ts src/sidepanel/ProfileSections.test.ts src/sidepanel/navigation.test.ts"
+```
+
+2. 将 `test` 脚本改为先跑 `node --experimental-strip-types --test ...`，再执行：
+
+```bash
+npm run test:sidepanel
+```
+
+3. 在 `/Users/bytedance/Downloads/网申/Job-Application-Helper/.worktrees/sidepanel-basic-info/package.json` 的 `devDependencies` 中固化：
+
+```json
+"tsx": "^4.23.10"
+```
+
+4. 更新 `/Users/bytedance/Downloads/网申/Job-Application-Helper/.worktrees/sidepanel-basic-info/package-lock.json`，把 `tsx` 与其锁定产物纳入版本控制。
+
+### 验证
+
+#### 配置回归测试
+
+```bash
+node --experimental-strip-types --test src/shared/packageScripts.test.ts
+```
+
+结果：
+
+```text
+tests 1
+pass 1
+fail 0
+```
+
+#### 完整测试
+
+```bash
+npm test
+```
+
+结果：
+
+```text
+node --experimental-strip-types --test: 99/99 通过
+tsx sidepanel tests: 8/8 通过
+总计: 107/107 通过
+```
+
+覆盖到的关键点：
+
+- 原有 shared / parser / background / content / offscreen / llm 回归未回退
+- 新增脚本配置测试覆盖 `npm test`、`test:sidepanel`、`package.json`、`package-lock.json`
+- sidepanel 基本信息与导航测试继续通过
+
+#### 构建验证
+
+```bash
+npm run build
+```
+
+结果：`tsc -b`、`vite build`、`post-build` 全部通过。
+
+### 修复后 concerns
+
+- 当前 `npm test` 已不再依赖 `npx --yes tsx`，review finding 已关闭。
+- 仍存在 1 个已知但与本次修复无关的仓库级 concern：`npm install` 输出提示 1 个 high severity vulnerability；本次未扩展处理依赖安全审计，因为不属于该 review finding 的修复范围。
