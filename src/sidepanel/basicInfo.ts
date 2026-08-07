@@ -20,7 +20,12 @@ export const BASIC_INFO_FIELDS: BasicInfoField[] = [
   { key: 'selfEvaluation', label: '自我评价' },
 ];
 
-export function toSingleLinePreview(value: string, maxChars = 24): string {
+export const SELF_EVALUATION_PREVIEW_MAX_CHARS = 18;
+
+export function toSingleLinePreview(
+  value: string,
+  maxChars = SELF_EVALUATION_PREVIEW_MAX_CHARS
+): string {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (normalized.length <= maxChars) return normalized;
   return `${normalized.slice(0, maxChars)}......`;
@@ -30,7 +35,7 @@ export function buildBasicInfoItems(personal: PersonalInfo) {
   return BASIC_INFO_FIELDS.map(field => {
     const raw = String(personal[field.key] ?? '').trim();
     const displayValue = field.key === 'selfEvaluation'
-      ? toSingleLinePreview(raw, 18)
+      ? toSingleLinePreview(raw)
       : raw;
 
     return {

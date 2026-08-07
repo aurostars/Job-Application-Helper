@@ -24,6 +24,11 @@ export function BasicInformationSection({
       <div className="field-list">
         {items.map((item) => {
           const key = `基本信息-${String(item.key)}`;
+          const valueClassName = [
+            'field-value',
+            item.empty ? 'empty-value' : '',
+            item.key === 'selfEvaluation' ? 'field-value-single-line' : '',
+          ].filter(Boolean).join(' ');
           return (
             <button
               className="field-button"
@@ -33,7 +38,7 @@ export function BasicInformationSection({
               title={item.empty ? '该字段未填写' : '点击写入网页当前输入框'}
             >
               <span className="field-label">{item.label}</span>
-              <span className={item.empty ? 'field-value empty-value' : 'field-value'}>
+              <span className={valueClassName}>
                 {item.empty ? '未填写' : item.displayValue}
               </span>
               {workingKey === key && <span className="field-working">写入中</span>}

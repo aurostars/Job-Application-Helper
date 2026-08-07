@@ -48,7 +48,7 @@ test('空值字段显示未填写并禁用按钮', () => {
   assert.match(html, /disabled/);
 });
 
-test('自我评价仅依赖数据层六个点摘要', () => {
+test('自我评价摘要在单行样式下仍保留六个点文案', () => {
   const html = renderToStaticMarkup(
     React.createElement(ProfileSections, {
       profile,
@@ -58,5 +58,5 @@ test('自我评价仅依赖数据层六个点摘要', () => {
   );
 
   assert.match(html, /具备扎实的软件开发基础和完整的项目....../);
-  assert.doesNotMatch(html, /field-value-single-line/);
+  assert.match(html, /field-value-single-line/);
 });

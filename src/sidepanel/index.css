@@ -274,6 +274,13 @@ textarea {
   line-height: 1.5;
 }
 
+.field-value-single-line {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
 .empty-value {
   color: #a1a1aa;
 }
