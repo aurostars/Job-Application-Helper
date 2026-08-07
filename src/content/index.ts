@@ -48,12 +48,6 @@ document.addEventListener('focusin', (event) => {
   }
 }, true);
 
-const SECTION_CONFIG: Array<{ section: FillSection; keyword: string }> = [
-  { section: 'personal', keyword: '基本信息' },
-  { section: 'education', keyword: '教育经历' },
-  { section: 'experience', keyword: '实习经历' },
-];
-
 function isWritableControl(
   target: EventTarget | null
 ): target is HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
@@ -286,83 +280,6 @@ function startAIRegionSelection() {
   visualRegionFillController.beginVisualRegionFill();
 }
 
-async function handleAISectionFill(
-  section: FillSection,
-  region?: HTMLElement,
-  selectionRect?: DOMRect
-) {
-  const status = showAIRegionStatus('正在扫描空白字段...');
-  const requestId = crypto.randomUUID();
-  let cancelled = false;
-  status.setCancelHandler(async () => {
-    if (cancelled) return;
-    cancelled = true;
-    status.update('正在终止 AI 补填...');
-    await sendRuntimeMessage({
-      type: 'CANCEL_AI_FILL',
-      payload: { requestId },
-    });
-    status.update('AI 补填已终止', 'warning');
-  });
-
-  try {
-    const fields = collectBlankSectionFields(section, region, selectionRect);
-    if (fields.length === 0) {
-      status.update('选中区域没有可补填的空白字段', 'warning');
-      return;
-    }
-
-    status.update(`AI 正在匹配 ${fields.length} 个空白字段...`);
-    const response = await sendRuntimeMessage<Record<string, string>>({
-      type: 'AI_FILL_SECTION',
-      payload: {
-        requestId,
-        section,
-        domain: window.location.hostname,
-        fields: fields.map(field => ({
-          index: field.index,
-          rowIndex: field.rowIndex,
-          name: field.name,
-          label: field.label,
-          type: field.type,
-          options: field.options,
-          context: field.context,
-        })),
-      },
-    });
-
-    if (cancelled) return;
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'AI 未返回补填结果');
-    }
-
-    const values = Object.entries(response.data)
-      .map(([index, value]) => {
-        const field = fields.find(item => item.index === Number(index));
-        return field ? { element: field.element, value } : null;
-      })
-      .filter((item): item is {
-        element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-        value: string;
-      } => Boolean(item))
-      .sort((a, b) => getDateRangeFillPriority(a.element) - getDateRangeFillPriority(b.element));
-
-    const filledCount = await formFiller.fillElementValues(values, () => !cancelled);
-    if (cancelled) return;
-    status.update(`AI 补填完成：已补 ${filledCount} 项`, 'success');
-  } catch (error) {
-    if (cancelled || (error instanceof Error && /已终止|abort/i.test(error.message))) {
-      status.update('AI 补填已终止', 'warning');
-      return;
-    }
-    console.error('AI section fill failed:', error);
-    status.update(
-      `AI 补填失败：${error instanceof Error ? error.message : '未知错误'}`,
-      'error'
-    );
-  }
-}
-
 type ScannedPageField = PageScanField & {
   element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
 };
@@ -540,91 +457,6 @@ function showAIRegionStatus(initialText: string) {
   };
 }
 
-function collectBlankSectionFields(
-  section: FillSection,
-  selectedRegion?: HTMLElement,
-  selectionRect?: DOMRect
-): Array<{
-  index: number;
-  rowIndex: number;
-  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-  name: string;
-  label: string;
-  type: string;
-  options: string[];
-  context: string;
-}> {
-  const keyword = SECTION_CONFIG.find(config => config.section === section)?.keyword;
-  const module = selectedRegion || (selectionRect ? document.body : (keyword ? findSectionModule(keyword) : null));
-  if (!module) return [];
-
-  const elements = Array.from(
-    module.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
-      'input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]), textarea, select'
-    )
-  ).filter(element => {
-    if (element.offsetParent === null || element.disabled) return false;
-    if (!selectionRect) return true;
-    const rect = element.getBoundingClientRect();
-    return !(
-      rect.right < selectionRect.left ||
-      rect.left > selectionRect.right ||
-      rect.bottom < selectionRect.top ||
-      rect.top > selectionRect.bottom
-    );
-  });
-  const rowCounters = new Map<string, number>();
-
-  return elements.flatMap((element, index) => {
-    const container = element.closest<HTMLElement>(
-      '[data-form-field-id], [data-form-field-name], [data-form-field-i18n-name]'
-    );
-    const name = (
-      element.getAttribute('data-form-field-name') ||
-      container?.getAttribute('data-form-field-name') ||
-      element.getAttribute('data-form-field-id') ||
-      container?.getAttribute('data-form-field-id') ||
-      element.name ||
-      ''
-    );
-    const label = (
-      element.getAttribute('data-form-field-i18n-name') ||
-      container?.getAttribute('data-form-field-i18n-name') ||
-      container?.querySelector('label')?.textContent ||
-      ''
-    ).trim();
-    const selectedText = (
-      container?.querySelector('.ud__select__selector__selectItem')?.textContent || ''
-    ).trim();
-    const value = selectedText || element.value.trim();
-    if (value) return [];
-
-    const key = `${name}|${label}`;
-    const occurrence = rowCounters.get(key) || 0;
-    rowCounters.set(key, occurrence + 1);
-    const isDateRange = name === 'start_end_time' || label === '起止时间';
-    const rowIndex = isDateRange ? Math.floor(occurrence / 2) : occurrence;
-    const dateInputs = isDateRange && container
-      ? Array.from(container.querySelectorAll('input:not([type="hidden"]), textarea, select'))
-        .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
-      : [];
-    const datePosition = dateInputs.indexOf(element);
-
-    return [{
-      index,
-      rowIndex,
-      element,
-      name,
-      label,
-      type: isDateRange
-        ? (datePosition === 1 ? 'date-end' : 'date-start')
-        : (element.getAttribute('role') === 'combobox' ? 'combobox' : element.tagName.toLowerCase()),
-      options: getKnownOptions(label, name),
-      context: `${isDateRange ? (datePosition === 1 ? '结束/较晚时间；' : '开始/较早时间；') : ''}${(container?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200)}`,
-    }];
-  });
-}
-
 function getKnownOptions(label: string, name: string): string[] {
   if (label === '学历类型' || name === 'education_type') {
     return ['海外及港澳台', '统招全日制', '统招非全日制', '自考', '其他'];
@@ -645,14 +477,6 @@ function getDateRangeFillPriority(element: Element): number {
     container.querySelectorAll('input:not([type="hidden"]), textarea, select')
   ).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
   return inputs.indexOf(element) === 1 ? 0 : 1;
-}
-
-function findSectionModule(keyword: string): HTMLElement | null {
-  const modules = Array.from(document.querySelectorAll<HTMLElement>('[class*=applyFormModuleWrapper]'));
-
-  return modules
-    .filter(module => (module.textContent || '').includes(keyword))
-    .sort((a, b) => b.querySelectorAll('input, textarea, select, button').length - a.querySelectorAll('input, textarea, select, button').length)[0] || null;
 }
 
 // 使用 LLM 增强字段检测
