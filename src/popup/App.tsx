@@ -61,6 +61,7 @@ function App() {
   const [syncNotice, setSyncNotice] = useState<'success' | 'error' | null>(null);
   const syncPendingRef = useRef(false);
   const syncNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
   const fetchProfile = async (): Promise<UserProfile> => {
     const response = await MessageService.sendMessage<UserProfile>({ type: 'GET_USER_PROFILE' });
@@ -75,6 +76,7 @@ function App() {
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     const gate = createPopupRequestGate();
     requestGateRef.current = gate;
     const token = gate.begin();
@@ -89,6 +91,7 @@ function App() {
     }).finally(() => { if (gate.isCurrent(token)) setLoading(false); });
     void detectFields();
     return () => {
+      mountedRef.current = false;
       gate.unmount();
       switchPendingRef.current = false;
       syncPendingRef.current = false;
@@ -140,17 +143,20 @@ function App() {
           url: getRuntimeUrl('src/options/index.html?tab=data-sync'),
         }).then(() => undefined),
       });
+      if (!mountedRef.current) return;
       if (result === 'synced') {
         setSyncNotice('success');
-        syncNoticeTimerRef.current = setTimeout(() => setSyncNotice(null), 1800);
+        syncNoticeTimerRef.current = setTimeout(() => {
+          if (mountedRef.current) setSyncNotice(null);
+        }, 1800);
       } else if (result === 'error') {
         setSyncNotice('error');
       }
     } catch {
-      setSyncNotice('error');
+      if (mountedRef.current) setSyncNotice('error');
     } finally {
       syncPendingRef.current = false;
-      setSyncing(false);
+      if (mountedRef.current) setSyncing(false);
     }
   };
 

@@ -120,3 +120,53 @@ test('立即同步期间禁用重复点击并在成功后给出反馈', async ()
     (globalThis as { chrome?: unknown }).chrome = originalChrome;
   }
 });
+
+
+test('同步 pending 时卸载后完成请求不再更新状态或创建反馈计时器', async () => {
+  const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+  const originalSetTimeout = globalThis.setTimeout;
+  let resolveSync!: (value: unknown) => void;
+  const syncResponse = new Promise(resolve => { resolveSync = resolve; });
+  let feedbackTimers = 0;
+  let renderer!: TestRenderer.ReactTestRenderer;
+
+  (globalThis as { chrome?: unknown }).chrome = {
+    runtime: {
+      getURL: (path: string) => `chrome-extension://test/${path}`,
+      async sendMessage(message: { type: string }) {
+        if (message.type === 'SYNC_NOW') return syncResponse;
+        return { success: false, error: '测试中不加载资料' };
+      },
+    },
+    tabs: {
+      async query() { return [{}]; },
+      async create() { return {}; },
+    },
+  };
+
+  try {
+    await act(async () => {
+      renderer = TestRenderer.create(<App />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => { renderer.root.findByProps({ 'aria-label': '立即同步' }).props.onClick(); });
+    await act(async () => renderer.unmount());
+
+    globalThis.setTimeout = ((handler: TimerHandler, delay?: number) => {
+      if (delay === 1800) feedbackTimers += 1;
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout;
+
+    await act(async () => {
+      resolveSync({ success: true, data: { status: 'synced', action: 'no-change' } });
+      await syncResponse;
+      await Promise.resolve();
+    });
+
+    assert.equal(feedbackTimers, 0);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    (globalThis as { chrome?: unknown }).chrome = originalChrome;
+  }
+});
