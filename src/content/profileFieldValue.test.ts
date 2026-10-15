@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getExtendedProfileFieldValue } from './profileFieldValue.ts';
 import { FieldType, type UserProfile } from '../shared/types.ts';
+import { FieldMatcher } from '../utils/fieldMatcher.ts';
 
 const profile = {
   personal: { name: '董星', gender: '', birthDate: '', phone: '', email: '', hobbies: '摄影、徒步' },
@@ -12,6 +13,14 @@ const profile = {
 test('新增资料字段按类型返回完整内容', () => {
   assert.equal(getExtendedProfileFieldValue(FieldType.HOBBIES, profile), '摄影、徒步');
   assert.equal(getExtendedProfileFieldValue(FieldType.MAJOR_COURSES, profile, 0), '数据结构、操作系统');
+});
+
+test('识别主要课程字段后从对应教育记录读取课程而不是专业', () => {
+  const matched = FieldMatcher.matchFieldType('', '', '', '专业课程', 'text', '');
+
+  assert.equal(matched.fieldType, FieldType.MAJOR_COURSES);
+  assert.equal(getExtendedProfileFieldValue(matched.fieldType, profile, 0), '数据结构、操作系统');
+  assert.notEqual(getExtendedProfileFieldValue(matched.fieldType, profile, 0), profile.education[0].major);
 });
 
 test('新增资料字段为空时返回 null，其他字段返回 undefined', () => {

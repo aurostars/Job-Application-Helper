@@ -395,7 +395,7 @@ function App() {
             <button
               type="button"
               className="popup-sync-button"
-              aria-label="立即同步"
+              aria-label={syncing ? '正在同步' : syncNotice === 'success' ? '同步成功' : '立即同步'}
               onClick={() => void handleSyncNow()}
               disabled={syncDisabled}
             >

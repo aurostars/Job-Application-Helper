@@ -185,7 +185,7 @@ test("自定义信息支持排序且添加按钮位于卡片之后", async () =>
   } finally { await env.cleanup(); }
 });
 
-test("个人页和教育页展示兴趣爱好与专业课程字段", async () => {
+test("个人页和教育页展示兴趣爱好与主要课程字段", async () => {
   const profile = makeProfile("资料 A");
   profile.education = [{ id: "edu", school: "", major: "", degree: "", startDate: "", endDate: "" }];
   const env = await setup(profile);
@@ -193,5 +193,6 @@ test("个人页和教育页展示兴趣爱好与专业课程字段", async () =>
     assert.ok(env.renderer.root.findByProps({ placeholder: "请输入兴趣爱好" }));
     await act(async () => { button(env.renderer, "教育经历")?.props.onClick(); });
     assert.ok(env.renderer.root.findByProps({ placeholder: "如 数据结构、操作系统、计算机网络" }));
+    assert.ok(env.renderer.root.findAllByType("label").some(label => label.children.join("") === "主要课程"));
   } finally { await env.cleanup(); }
 });

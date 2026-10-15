@@ -287,6 +287,7 @@ test('展示新增字段并为每个非空字段提供独立复制按钮', () =>
           ranking: '',
           majorCourses: '数据结构、操作系统',
         }],
+        skills: ['TypeScript'],
       },
       workingKey: null,
       onFieldClick: () => {},
@@ -297,8 +298,14 @@ test('展示新增字段并为每个非空字段提供独立复制按钮', () =>
   assert.match(html, /摄影、徒步/);
   assert.match(html, /主要课程/);
   assert.match(html, /数据结构、操作系统/);
-  assert.match(html, /aria-label="复制兴趣爱好内容"/);
-  assert.match(html, /aria-label="复制主要课程内容"/);
-  const nonEmptyValues = 6 + 1 + 2;
-  assert.equal((html.match(/class="field-copy-button"/g) || []).length, nonEmptyValues);
+  const expectedLabelledFields = [
+    '姓名', '性别', '出生日期', '手机号', '邮箱', '兴趣爱好', '自我评价', '学校', '主要课程',
+  ];
+  for (const label of expectedLabelledFields) {
+    assert.match(html, new RegExp(`aria-label="复制${label}内容"`));
+  }
+  assert.equal((html.match(/aria-label="复制字段内容"/g) || []).length, 1);
+  assert.match(html, /TypeScript/);
+  const expectedCopyButtonCount = 10;
+  assert.equal((html.match(/class="field-copy-button"/g) || []).length, expectedCopyButtonCount);
 });

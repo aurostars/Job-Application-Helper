@@ -178,7 +178,7 @@ export function EducationSection({ items, onChange }: Props) {
           </div>
 
           <div style={styles.group}>
-            <label style={styles.label}>专业课程</label>
+            <label style={styles.label}>主要课程</label>
             <textarea
               value={item.majorCourses || ''}
               onChange={e => update(index, 'majorCourses', e.target.value)}

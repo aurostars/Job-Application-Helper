@@ -99,7 +99,7 @@ test('立即同步期间禁用重复点击并在成功后给出反馈', async ()
 
     let syncButton = renderer.root.findByProps({ 'aria-label': '立即同步' });
     act(() => { syncButton.props.onClick(); });
-    syncButton = renderer.root.findByProps({ 'aria-label': '立即同步' });
+    syncButton = renderer.root.findByProps({ 'aria-label': '正在同步' });
     assert.equal(syncButton.props.disabled, true);
     assert.match(JSON.stringify(syncButton.props.children), /同步中/);
 
@@ -112,7 +112,7 @@ test('立即同步期间禁用重复点击并在成功后给出反馈', async ()
       await Promise.resolve();
     });
 
-    syncButton = renderer.root.findByProps({ 'aria-label': '立即同步' });
+    syncButton = renderer.root.findByProps({ 'aria-label': '同步成功' });
     assert.equal(syncButton.props.disabled, false);
     assert.equal(syncButton.findByType('span').children.join(''), '同步成功');
   } finally {

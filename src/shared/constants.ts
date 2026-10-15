@@ -39,11 +39,12 @@ export const FIELD_PATTERNS: Record<string, string[]> = {
     'educationtype', 'education_type', 'studytype', '学历类型',
     '学习形式', '培养方式', '全日制', '非全日制'
   ],
+  // 具体的课程字段必须先于宽泛的 major / 专业 / course 模式匹配。
+  [FieldType.MAJOR_COURSES]: ['主要课程', '主修课程', '课程', 'majorcourses', 'major_courses', 'courses'],
   [FieldType.MAJOR]: [
     'major', 'specialty', 'discipline', 'subject', '专业', '所学专业',
     '专业名称', 'fieldofstudy', 'field_of_study', 'course'
   ],
-  [FieldType.MAJOR_COURSES]: ['主要课程', '主修课程', '课程', 'majorcourses', 'major_courses', 'courses'],
   [FieldType.DEGREE]: [
     'degree', 'education', 'diploma', 'qualification', '学历', '学位',
     '文凭', '教育程度', 'academicqualification'
