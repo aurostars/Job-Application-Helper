@@ -478,7 +478,7 @@ function App() {
             onClick={() => setActiveTab('personal')}
             className={activeTab === 'personal' ? 'options-tab active' : 'options-tab'}
           >
-            基本信息
+            个人基本信息
           </button>
           <button
             onClick={() => setActiveTab('education')}

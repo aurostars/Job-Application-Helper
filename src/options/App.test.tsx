@@ -134,13 +134,19 @@ test("实习项目页不再显示成果和技术栈输入", async () => {
   } finally { await env.cleanup(); }
 });
 
-test("标签顺序为实习项目、技能荣誉、自定义信息", async () => {
+test("前五个标签文案和顺序准确", async () => {
   const env = await setup();
   try {
-    const labels = env.renderer.root.findAllByProps({ className: "options-tab" })
-      .map(item => item.children.join(""));
-    assert.ok(labels.indexOf("实习项目") < labels.indexOf("技能荣誉"));
-    assert.ok(labels.indexOf("技能荣誉") < labels.indexOf("自定义信息"));
+    const labels = env.renderer.root.findAll(node =>
+      node.type === "button" && node.props.className?.split(" ").includes("options-tab")
+    ).map(item => item.children.join(""));
+    assert.deepEqual(labels.slice(0, 5), [
+      "个人基本信息",
+      "教育经历",
+      "实习项目",
+      "技能荣誉",
+      "自定义信息",
+    ]);
   } finally { await env.cleanup(); }
 });
 
