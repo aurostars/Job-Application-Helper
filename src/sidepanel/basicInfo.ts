@@ -17,6 +17,7 @@ export const BASIC_INFO_FIELDS: BasicInfoField[] = [
   { key: 'hometown', label: '籍贯' },
   { key: 'currentAddress', label: '现居地' },
   { key: 'idCard', label: '身份证号' },
+  { key: 'hobbies', label: '兴趣爱好' },
   { key: 'selfEvaluation', label: '自我评价' },
 ];
 

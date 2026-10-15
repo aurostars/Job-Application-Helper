@@ -8,6 +8,7 @@ import type {
   UserProfile,
 } from '../shared/types.ts';
 import { BasicInformationSection } from './BasicInformationSection.tsx';
+import { FieldRow } from './FieldRow.tsx';
 import { SectionSummary } from './SectionSummary.tsx';
 
 type FieldSpec<T> = {
@@ -25,6 +26,7 @@ const educationFields: FieldSpec<EducationInfo>[] = [
   { key: 'endDate', label: '毕业时间' },
   { key: 'gpa', label: 'GPA / 成绩' },
   { key: 'ranking', label: '排名' },
+  { key: 'majorCourses', label: '主要课程' },
 ];
 
 const experienceFields: FieldSpec<ExperienceInfo>[] = [
@@ -140,16 +142,14 @@ function SkillsSection({
           return (
             <article className="record-card skill-card" key={key}>
               <div className="field-list">
-                <button
-                  type="button"
-                  className="field-button skill-field-button"
-                  onClick={() => onFieldClick(key, skill.value)}
+                <FieldRow
+                  fieldKey={key}
+                  value={skill.value}
+                  working={workingKey === key}
                   disabled={workingKey !== null}
-                  title={workingKey === key ? '正在填写当前字段' : '点击写入当前网页输入框'}
-                >
-                  <span className="field-value">{skill.value}</span>
-                  {workingKey === key && <span className="field-working">写入中</span>}
-                </button>
+                  className="skill-field-row"
+                  onFieldClick={onFieldClick}
+                />
               </div>
             </article>
           );
@@ -178,22 +178,19 @@ function CustomInformationSection({
           {records.map((record, index) => {
             const value = record.content.trim();
             const key = `自定义信息-${record.id}`;
+            const label = record.name.trim() || `自定义信息 ${index + 1}`;
             return (
-              <button
-                className="field-button custom-field-button"
+              <FieldRow
                 key={record.id}
-                disabled={!value || Boolean(workingKey)}
-                onClick={() => onFieldClick(key, value)}
-                title={value ? '点击写入网页当前输入框' : '该字段未填写'}
-              >
-                <span className="field-label">
-                  {record.name.trim() || `自定义信息 ${index + 1}`}
-                </span>
-                <span className={value ? 'field-value' : 'field-value empty-value'}>
-                  {value || '未填写'}
-                </span>
-                {workingKey === key && <span className="field-working">写入中</span>}
-              </button>
+                fieldKey={key}
+                label={label}
+                value={value}
+                empty={!value}
+                working={workingKey === key}
+                disabled={workingKey !== null}
+                className="custom-field-row"
+                onFieldClick={onFieldClick}
+              />
             );
           })}
         </div>
@@ -240,19 +237,16 @@ function RecordSection<T extends { id: string }>({
                   const key = `${title}-${record.id}-${String(field.key)}`;
                   const empty = value.trim() === '';
                   return (
-                    <button
-                      className="field-button"
+                    <FieldRow
                       key={String(field.key)}
-                      disabled={empty || Boolean(workingKey)}
-                      onClick={() => onFieldClick(key, value)}
-                      title={empty ? '该字段未填写' : '点击写入网页当前输入框'}
-                    >
-                      <span className="field-label">{field.label}</span>
-                      <span className={empty ? 'field-value empty-value' : 'field-value'}>
-                        {empty ? '未填写' : value}
-                      </span>
-                      {workingKey === key && <span className="field-working">写入中</span>}
-                    </button>
+                      fieldKey={key}
+                      label={field.label}
+                      value={value}
+                      empty={empty}
+                      working={workingKey === key}
+                      disabled={workingKey !== null}
+                      onFieldClick={onFieldClick}
+                    />
                   );
                   })}
               </div>
