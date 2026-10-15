@@ -43,6 +43,7 @@ export const FIELD_PATTERNS: Record<string, string[]> = {
     'major', 'specialty', 'discipline', 'subject', '专业', '所学专业',
     '专业名称', 'fieldofstudy', 'field_of_study', 'course'
   ],
+  [FieldType.MAJOR_COURSES]: ['主要课程', '主修课程', '课程', 'majorcourses', 'major_courses', 'courses'],
   [FieldType.DEGREE]: [
     'degree', 'education', 'diploma', 'qualification', '学历', '学位',
     '文凭', '教育程度', 'academicqualification'
@@ -55,6 +56,7 @@ export const FIELD_PATTERNS: Record<string, string[]> = {
     'selfevaluation', 'self_evaluation', 'selfassessment', 'personalsummary',
     '自我评价', '个人评价', '个人总结', '个人优势', '自我描述'
   ],
+  [FieldType.HOBBIES]: ['兴趣爱好', '兴趣', '爱好', 'hobbies', 'interests'],
   [FieldType.EDUCATION_START_DATE]: [
     '入学时间', '入学日期', '入学年月', '就读开始', '就读起始',
     '教育开始时间', '教育开始日期', 'educationstart', 'educationstartdate',

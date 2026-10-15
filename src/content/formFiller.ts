@@ -1,6 +1,7 @@
 import type { DetectedField, UserProfile } from '../shared/types';
 import { FieldType } from '../shared/types';
 import { GENDER_OPTIONS, DEGREE_OPTIONS } from '../shared/constants';
+import { getExtendedProfileFieldValue } from './profileFieldValue';
 
 export type FillSection = 'all' | 'personal' | 'education' | 'experience' | 'projects' | 'awards';
 
@@ -9,6 +10,7 @@ const EDUCATION_FIELD_TYPES = new Set<FieldType>([
   FieldType.COLLEGE,
   FieldType.EDUCATION_TYPE,
   FieldType.MAJOR,
+  FieldType.MAJOR_COURSES,
   FieldType.DEGREE,
   FieldType.GPA,
   FieldType.EDUCATION_START_DATE,
@@ -417,6 +419,8 @@ export class FormFiller {
     const award = profile.awards[awardIndex];
     const educationDates = this.getOrderedDateRange(education?.startDate, education?.endDate);
     const experienceDates = this.getOrderedDateRange(experience?.startDate, experience?.endDate);
+    const extendedValue = getExtendedProfileFieldValue(fieldType, profile, educationIndex);
+    if (extendedValue !== undefined) return extendedValue;
 
     switch (fieldType) {
       case FieldType.NAME:

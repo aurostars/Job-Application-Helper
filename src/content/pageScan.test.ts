@@ -49,6 +49,8 @@ test('groups page scan fields by section while preserving field order and metada
 test('matches award field semantics without reviving removed legacy fields', () => {
   const match = (labelText: string) => FieldMatcher.matchFieldType('', '', '', labelText, 'text', '');
 
+  assert.equal(match('主要课程').fieldType, FieldType.MAJOR_COURSES);
+  assert.equal(match('兴趣爱好').fieldType, FieldType.HOBBIES);
   assert.equal(match('奖项名称').fieldType, FieldType.AWARD_NAME);
   assert.equal(match('获奖角色').fieldType, FieldType.AWARD_ROLE);
   assert.equal(match('获奖时间').fieldType, FieldType.AWARD_DATE);

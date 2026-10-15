@@ -30,6 +30,7 @@ export interface PersonalInfo {
   hometown?: string;
   currentAddress?: string;
   selfEvaluation?: string;
+  hobbies?: string;
 }
 
 export interface EducationInfo {
@@ -43,6 +44,7 @@ export interface EducationInfo {
   endDate: string;
   gpa?: string;
   ranking?: string;
+  majorCourses?: string;
 }
 
 export interface ExperienceInfo {
@@ -418,9 +420,11 @@ export enum FieldType {
   COLLEGE = 'college',
   EDUCATION_TYPE = 'educationType',
   MAJOR = 'major',
+  MAJOR_COURSES = 'majorCourses',
   DEGREE = 'degree',
   GPA = 'gpa',
   SELF_EVALUATION = 'selfEvaluation',
+  HOBBIES = 'hobbies',
   EDUCATION_START_DATE = 'educationStartDate',
   GRADUATION_DATE = 'graduationDate',
   COMPANY = 'company',
