@@ -26,28 +26,35 @@ export function FieldRow({
   const [copied, setCopied] = React.useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = React.useRef(true);
+  const requestSequenceRef = React.useRef(0);
 
   React.useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      requestSequenceRef.current += 1;
       if (timerRef.current !== null) clearTimeout(timerRef.current);
     };
   }, []);
 
   const copy = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
+    const requestSequence = ++requestSequenceRef.current;
     try {
       await navigator.clipboard.writeText(value);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || requestSequence !== requestSequenceRef.current) return;
       setCopied(true);
       if (timerRef.current !== null) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
-        setCopied(false);
-        timerRef.current = null;
+      const timer = setTimeout(() => {
+        if (requestSequence === requestSequenceRef.current) setCopied(false);
+        if (timerRef.current === timer) timerRef.current = null;
       }, 1000);
+      timerRef.current = timer;
     } catch {
-      if (mountedRef.current) setCopied(false);
+      if (!mountedRef.current || requestSequence !== requestSequenceRef.current) return;
+      setCopied(false);
+      if (timerRef.current !== null) clearTimeout(timerRef.current);
+      timerRef.current = null;
     }
   };
 

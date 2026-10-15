@@ -155,3 +155,69 @@ test('剪贴板请求未完成时卸载不会再创建计时器', async () => {
     globalThis.setTimeout = originalSetTimeout;
   }
 });
+
+test('旧复制失败晚于新复制成功时保留最新成功状态', async () => {
+  type PendingWrite = { resolve: () => void; reject: () => void };
+  const pending: PendingWrite[] = [];
+  installClipboard(() => new Promise<void>((resolve, reject) => {
+    pending.push({ resolve, reject: () => reject(new Error('clipboard denied')) });
+  }));
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <FieldRow fieldKey="email" label="邮箱" value="lin@example.com" onFieldClick={() => {}} />,
+    );
+  });
+  const copy = renderer.root.findByProps({ 'aria-label': '复制邮箱内容' });
+  let oldRequest!: Promise<void>;
+  let newRequest!: Promise<void>;
+  act(() => { oldRequest = copy.props.onClick({ stopPropagation: () => {} }); });
+  act(() => { newRequest = copy.props.onClick({ stopPropagation: () => {} }); });
+
+  await act(async () => {
+    pending[1].resolve();
+    await newRequest;
+  });
+  assert.equal(copy.children.join(''), '✓');
+
+  await act(async () => {
+    pending[0].reject();
+    await oldRequest;
+  });
+  assert.equal(copy.children.join(''), '✓');
+  await act(async () => renderer.unmount());
+});
+
+test('旧复制成功晚于新复制失败时不覆盖最新失败状态', async () => {
+  type PendingWrite = { resolve: () => void; reject: () => void };
+  const pending: PendingWrite[] = [];
+  installClipboard(() => new Promise<void>((resolve, reject) => {
+    pending.push({ resolve, reject: () => reject(new Error('clipboard denied')) });
+  }));
+
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <FieldRow fieldKey="phone" label="手机号" value="13800138000" onFieldClick={() => {}} />,
+    );
+  });
+  const copy = renderer.root.findByProps({ 'aria-label': '复制手机号内容' });
+  let oldRequest!: Promise<void>;
+  let newRequest!: Promise<void>;
+  act(() => { oldRequest = copy.props.onClick({ stopPropagation: () => {} }); });
+  act(() => { newRequest = copy.props.onClick({ stopPropagation: () => {} }); });
+
+  await act(async () => {
+    pending[1].reject();
+    await newRequest;
+  });
+  assert.equal(copy.children.join(''), '复制');
+
+  await act(async () => {
+    pending[0].resolve();
+    await oldRequest;
+  });
+  assert.equal(copy.children.join(''), '复制');
+  await act(async () => renderer.unmount());
+});
