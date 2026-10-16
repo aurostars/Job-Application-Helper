@@ -1,6 +1,7 @@
 import React from 'react';
 import type { PersonalInfo } from '../shared/types.ts';
 import { buildBasicInfoItems } from './basicInfo.ts';
+import { FieldRow } from './FieldRow.tsx';
 import { SectionSummary } from './SectionSummary.tsx';
 
 type BasicInformationSectionProps = {
@@ -22,25 +23,19 @@ export function BasicInformationSection({
       <div className="field-list">
         {items.map((item) => {
           const key = `基本信息-${String(item.key)}`;
-          const valueClassName = [
-            'field-value',
-            item.empty ? 'empty-value' : '',
-            item.key === 'selfEvaluation' ? 'field-value-single-line' : '',
-          ].filter(Boolean).join(' ');
           return (
-            <button
-              className="field-button"
+            <FieldRow
               key={String(item.key)}
-              disabled={item.empty || Boolean(workingKey)}
-              onClick={() => onFieldClick(key, item.value)}
-              title={item.empty ? '该字段未填写' : '点击写入网页当前输入框'}
-            >
-              <span className="field-label">{item.label}</span>
-              <span className={valueClassName}>
-                {item.empty ? '未填写' : item.displayValue}
-              </span>
-              {workingKey === key && <span className="field-working">写入中</span>}
-            </button>
+              fieldKey={key}
+              label={item.label}
+              value={item.value}
+              displayValue={item.displayValue}
+              empty={item.empty}
+              working={workingKey === key}
+              disabled={workingKey !== null}
+              className={item.key === 'selfEvaluation' ? 'field-value-single-line' : ''}
+              onFieldClick={onFieldClick}
+            />
           );
         })}
       </div>

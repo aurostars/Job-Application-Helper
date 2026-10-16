@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MessageService } from '../shared/message';
-import type { Message, MessageResponse, ResumeProfileSummary, UserProfile } from '../shared/types';
+import type { Message, MessageResponse, ResumeProfileSummary, SyncExecutionResult, UserProfile } from '../shared/types';
 import type { LLMConfig } from '../services/llm/types';
 import { claimPopupSwitch, createPopupRequestGate, executePopupInitialLoad, executePopupProfileSwitch, isPopupInteractionDisabled, ResumeProfileSelector } from './ResumeProfileSelector';
 import { buildSidepanelUrl, openInfoFloatWindow } from '../sidepanel/navigation';
+import { runPopupSync } from './syncNow';
 
 const APPLICATION_RECORDS_PAGE = 'src/application-records/index.html';
 
@@ -56,6 +57,11 @@ function App() {
   const [openingApplicationCreate, setOpeningApplicationCreate] = useState(false);
   const [openingApplicationRecords, setOpeningApplicationRecords] = useState(false);
   const [detectedFields, setDetectedFields] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<'success' | 'error' | null>(null);
+  const syncPendingRef = useRef(false);
+  const syncNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
   const fetchProfile = async (): Promise<UserProfile> => {
     const response = await MessageService.sendMessage<UserProfile>({ type: 'GET_USER_PROFILE' });
@@ -70,6 +76,7 @@ function App() {
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     const gate = createPopupRequestGate();
     requestGateRef.current = gate;
     const token = gate.begin();
@@ -84,8 +91,11 @@ function App() {
     }).finally(() => { if (gate.isCurrent(token)) setLoading(false); });
     void detectFields();
     return () => {
+      mountedRef.current = false;
       gate.unmount();
       switchPendingRef.current = false;
+      syncPendingRef.current = false;
+      if (syncNoticeTimerRef.current) clearTimeout(syncNoticeTimerRef.current);
     };
   }, []);
 
@@ -116,6 +126,37 @@ function App() {
     if (isCurrent()) {
       switchPendingRef.current = false;
       setSwitching(false);
+    }
+  };
+
+  const handleSyncNow = async () => {
+    if (syncPendingRef.current) return;
+    syncPendingRef.current = true;
+    setSyncing(true);
+    setSyncNotice(null);
+    if (syncNoticeTimerRef.current) clearTimeout(syncNoticeTimerRef.current);
+
+    try {
+      const result = await runPopupSync({
+        sync: () => MessageService.sendMessage<SyncExecutionResult>({ type: 'SYNC_NOW' }),
+        openSyncSettings: () => chrome.tabs.create({
+          url: getRuntimeUrl('src/options/index.html?tab=data-sync'),
+        }).then(() => undefined),
+      });
+      if (!mountedRef.current) return;
+      if (result === 'synced') {
+        setSyncNotice('success');
+        syncNoticeTimerRef.current = setTimeout(() => {
+          if (mountedRef.current) setSyncNotice(null);
+        }, 1800);
+      } else if (result === 'error') {
+        setSyncNotice('error');
+      }
+    } catch {
+      if (mountedRef.current) setSyncNotice('error');
+    } finally {
+      syncPendingRef.current = false;
+      if (mountedRef.current) setSyncing(false);
     }
   };
 
@@ -325,7 +366,8 @@ function App() {
     return response;
   };
 
-  const interactionDisabled = isPopupInteractionDisabled({ switching, filling, aiScanning, startingAIRegion });
+  const interactionDisabled = syncing || isPopupInteractionDisabled({ switching, filling, aiScanning, startingAIRegion });
+  const syncDisabled = interactionDisabled;
 
   if (loading) {
     return (
@@ -348,6 +390,19 @@ function App() {
           <div>
             <h1>秋招网申助手</h1>
             <p>让每一次投递更高效</p>
+          </div>
+          <div className="popup-sync-control">
+            <button
+              type="button"
+              className="popup-sync-button"
+              aria-label={syncing ? '正在同步' : syncNotice === 'success' ? '同步成功' : '立即同步'}
+              onClick={() => void handleSyncNow()}
+              disabled={syncDisabled}
+            >
+              {syncing ? '同步中…' : syncNotice === 'success' ? '✓' : '同步'}
+              {syncNotice === 'success' && <span className="popup-sr-only">同步成功</span>}
+            </button>
+            {syncNotice === 'error' && <span className="popup-sync-error" role="alert">同步失败，请重试</span>}
           </div>
         </div>
         <div className="popup-record-actions">

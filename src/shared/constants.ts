@@ -39,6 +39,8 @@ export const FIELD_PATTERNS: Record<string, string[]> = {
     'educationtype', 'education_type', 'studytype', '学历类型',
     '学习形式', '培养方式', '全日制', '非全日制'
   ],
+  // 具体的课程字段必须先于宽泛的 major / 专业 / course 模式匹配。
+  [FieldType.MAJOR_COURSES]: ['主要课程', '主修课程', '课程', 'majorcourses', 'major_courses', 'courses'],
   [FieldType.MAJOR]: [
     'major', 'specialty', 'discipline', 'subject', '专业', '所学专业',
     '专业名称', 'fieldofstudy', 'field_of_study', 'course'
@@ -55,6 +57,7 @@ export const FIELD_PATTERNS: Record<string, string[]> = {
     'selfevaluation', 'self_evaluation', 'selfassessment', 'personalsummary',
     '自我评价', '个人评价', '个人总结', '个人优势', '自我描述'
   ],
+  [FieldType.HOBBIES]: ['兴趣爱好', '兴趣', '爱好', 'hobbies', 'interests'],
   [FieldType.EDUCATION_START_DATE]: [
     '入学时间', '入学日期', '入学年月', '就读开始', '就读起始',
     '教育开始时间', '教育开始日期', 'educationstart', 'educationstartdate',

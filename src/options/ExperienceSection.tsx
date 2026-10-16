@@ -1,28 +1,23 @@
 import React from 'react';
 import type { ExperienceInfo, ProjectInfo } from '../shared/types';
 import { sectionStyles as styles } from './sectionStyles';
-import { SkillsEditor } from './SkillsEditor';
 
 interface Props {
   experience: ExperienceInfo[];
   projects: ProjectInfo[];
-  skills: string[];
   onChangeExperience: (items: ExperienceInfo[]) => void;
   onChangeProjects: (items: ProjectInfo[]) => void;
-  onChangeSkills: (skills: string[]) => void;
 }
 
 /**
- * 实习经历、项目/校园经历与技能的编辑界面。
+ * 实习经历与项目/校园经历的编辑界面。
  * 与教育经历一致，顺序决定自动填充取用哪一条。
  */
 export function ExperienceSection({
   experience,
   projects,
-  skills,
   onChangeExperience,
   onChangeProjects,
-  onChangeSkills,
 }: Props) {
   const updateExp = (index: number, field: keyof ExperienceInfo, value: string) => {
     const next = [...experience];
@@ -259,8 +254,6 @@ export function ExperienceSection({
       >
         添加项目经历
       </button>
-
-      <SkillsEditor skills={skills} onChange={onChangeSkills} />
     </div>
   );
 }

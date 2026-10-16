@@ -14,7 +14,7 @@ function text(renderer: TestRenderer.ReactTestRenderer): string {
   return renderer.root.findAll(node => typeof node.type === "string").flatMap(node => node.children).filter(child => typeof child === "string").join(" ");
 }
 
-async function setup() {
+async function setup(initialProfile: UserProfile = makeProfile("资料 A")) {
   const originalChrome = globalThis.chrome;
   const originalWindow = globalThis.window;
   const originalSend = MessageService.sendMessage;
@@ -23,7 +23,7 @@ async function setup() {
   let profileFailure = false;
   let getProfileCount = 0;
   let saveCount = 0;
-  const profiles: Record<string, UserProfile> = { "profile-a": makeProfile("资料 A"), "profile-b": makeProfile("资料 B") };
+  const profiles: Record<string, UserProfile> = { "profile-a": initialProfile, "profile-b": makeProfile("资料 B") };
   globalThis.window = { location: { search: "" }, setTimeout, clearTimeout } as unknown as Window & typeof globalThis;
   globalThis.chrome = { storage: { onChanged: { addListener(fn) { listener = fn; }, removeListener() {} } }, runtime: {} } as unknown as typeof chrome;
   MessageService.sendMessage = (async message => {
@@ -113,7 +113,7 @@ test("外部资料 reload 失败时保留冲突提示并显示错误", async () 
 test("奖项名称为空时阻止保存，只有名称时允许保存", async () => {
   const env = await setup();
   try {
-    await act(async () => { button(env.renderer, "实习与项目")?.props.onClick(); });
+    await act(async () => { button(env.renderer, "技能荣誉")?.props.onClick(); });
     await act(async () => { button(env.renderer, "添加奖项 / 荣誉")?.props.onClick(); });
     assert.match(text(env.renderer), /请填写奖项名称/);
     await act(async () => { await button(env.renderer, "保存设置")?.props.onClick(); });
@@ -125,11 +125,74 @@ test("奖项名称为空时阻止保存，只有名称时允许保存", async ()
   } finally { await env.cleanup(); }
 });
 
-test("实习与项目页不再显示成果和技术栈输入", async () => {
+test("实习项目页不再显示成果和技术栈输入", async () => {
   const env = await setup();
   try {
-    await act(async () => { button(env.renderer, "实习与项目")?.props.onClick(); });
+    await act(async () => { button(env.renderer, "实习项目")?.props.onClick(); });
     const rendered = text(env.renderer);
     assert.doesNotMatch(rendered, /实习成果|项目成果|项目技术栈/);
+  } finally { await env.cleanup(); }
+});
+
+test("前五个标签文案和顺序准确", async () => {
+  const env = await setup();
+  try {
+    const labels = env.renderer.root.findAll(node =>
+      node.type === "button" && node.props.className?.split(" ").includes("options-tab")
+    ).map(item => item.children.join(""));
+    assert.deepEqual(labels.slice(0, 5), [
+      "个人基本信息",
+      "教育经历",
+      "实习项目",
+      "技能荣誉",
+      "自定义信息",
+    ]);
+  } finally { await env.cleanup(); }
+});
+
+test("技能和荣誉只在技能荣誉页展示", async () => {
+  const env = await setup();
+  try {
+    await act(async () => { button(env.renderer, "实习项目")?.props.onClick(); });
+    assert.doesNotMatch(text(env.renderer), /专业技能|奖项 \/ 荣誉/);
+    await act(async () => { button(env.renderer, "技能荣誉")?.props.onClick(); });
+    assert.match(text(env.renderer), /专业技能/);
+    assert.match(text(env.renderer), /奖项 \/ 荣誉/);
+  } finally { await env.cleanup(); }
+});
+
+test("自定义信息支持排序且添加按钮位于卡片之后", async () => {
+  const profile = makeProfile("资料 A");
+  profile.customInformation = [
+    { id: "first", name: "第一项", content: "一" },
+    { id: "second", name: "第二项", content: "二" },
+  ];
+  const env = await setup(profile);
+  try {
+    await act(async () => { button(env.renderer, "自定义信息")?.props.onClick(); });
+    const list = env.renderer.root.findByProps({ className: "custom-information-list" });
+    const add = button(env.renderer, "添加");
+    assert.ok(add);
+    const form = env.renderer.root.findByProps({ className: "options-form" });
+    assert.ok(form.children.indexOf(add!) > form.children.indexOf(list));
+
+    const upButtons = env.renderer.root.findAllByType("button").filter(item => item.children.join("") === "上移");
+    const downButtons = env.renderer.root.findAllByType("button").filter(item => item.children.join("") === "下移");
+    assert.equal(upButtons[0].props.disabled, true);
+    assert.equal(downButtons[1].props.disabled, true);
+    await act(async () => { downButtons[0].props.onClick(); });
+    assert.equal(env.renderer.root.findAllByProps({ placeholder: "例如：期望薪资" })[0].props.value, "第二项");
+  } finally { await env.cleanup(); }
+});
+
+test("个人页和教育页展示兴趣爱好与主要课程字段", async () => {
+  const profile = makeProfile("资料 A");
+  profile.education = [{ id: "edu", school: "", major: "", degree: "", startDate: "", endDate: "" }];
+  const env = await setup(profile);
+  try {
+    assert.ok(env.renderer.root.findByProps({ placeholder: "请输入兴趣爱好" }));
+    await act(async () => { button(env.renderer, "教育经历")?.props.onClick(); });
+    assert.ok(env.renderer.root.findByProps({ placeholder: "如 数据结构、操作系统、计算机网络" }));
+    assert.ok(env.renderer.root.findAllByType("label").some(label => label.children.join("") === "主要课程"));
   } finally { await env.cleanup(); }
 });

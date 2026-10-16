@@ -322,12 +322,20 @@ textarea {
   background: var(--color-border);
 }
 
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1px;
+  background: var(--color-border);
+}
+
 .field-button {
   display: grid;
   grid-template-columns: minmax(68px, 0.32fr) minmax(0, 1fr) auto;
   align-items: start;
   gap: 8px;
   width: 100%;
+  min-width: 0;
   padding: 9px 10px;
   border: 0;
   background: var(--color-panel);
@@ -340,7 +348,8 @@ textarea {
   background: var(--color-primary-soft);
 }
 
-.field-button:focus-visible {
+.field-button:focus-visible,
+.field-copy-button:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
 }
@@ -349,8 +358,24 @@ textarea {
   cursor: default;
 }
 
-.skill-field-button {
+.skill-field-row .field-button {
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.field-copy-button {
+  align-self: stretch;
+  width: 44px;
+  padding: 0;
+  border: 0;
+  background: var(--color-panel);
+  color: var(--color-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.field-copy-button:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 
 .field-label {
@@ -365,7 +390,7 @@ textarea {
   line-height: 1.5;
 }
 
-.field-value-single-line {
+.field-value-single-line .field-value {
   display: block;
   overflow: hidden;
   white-space: nowrap;
@@ -395,7 +420,7 @@ textarea {
   background: var(--color-border);
 }
 
-.custom-field-button {
+.custom-field-row {
   min-width: 0;
 }
 

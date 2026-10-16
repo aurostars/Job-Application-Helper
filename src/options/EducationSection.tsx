@@ -1,3 +1,4 @@
+import React from 'react';
 import type { EducationInfo } from '../shared/types';
 import { sectionStyles as styles } from './sectionStyles';
 
@@ -174,6 +175,17 @@ export function EducationSection({ items, onChange }: Props) {
                 placeholder="如 5/120，可留空"
               />
             </div>
+          </div>
+
+          <div style={styles.group}>
+            <label style={styles.label}>主要课程</label>
+            <textarea
+              value={item.majorCourses || ''}
+              onChange={e => update(index, 'majorCourses', e.target.value)}
+              style={styles.textarea}
+              placeholder="如 数据结构、操作系统、计算机网络"
+              rows={3}
+            />
           </div>
 
         </div>

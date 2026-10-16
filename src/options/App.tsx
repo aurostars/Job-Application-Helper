@@ -12,7 +12,7 @@ import type {
 import { AISettings } from './AISettings';
 import { EducationSection } from './EducationSection';
 import { ExperienceSection } from './ExperienceSection';
-import { AwardsSection } from './AwardsSection';
+import { SkillsAwardsSection } from './SkillsAwardsSection';
 import { DataSyncSettings } from './DataSyncSettings';
 import { ApplicationRecordsSection } from './ApplicationRecordsSection';
 import { ResumeProfileManager } from './ResumeProfileManager';
@@ -24,6 +24,7 @@ const OPTION_TABS = [
   'personal',
   'education',
   'experience',
+  'skills-awards',
   'custom',
   'resume',
   'ai',
@@ -341,6 +342,15 @@ function App() {
     });
   };
 
+  const moveCustomInformation = (index: number, delta: number) => {
+    const current = profile.customInformation || [];
+    const target = index + delta;
+    if (target < 0 || target >= current.length) return;
+    const next = [...current];
+    [next[index], next[target]] = [next[target], next[index]];
+    setProfile({ ...profile, customInformation: next });
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -468,7 +478,7 @@ function App() {
             onClick={() => setActiveTab('personal')}
             className={activeTab === 'personal' ? 'options-tab active' : 'options-tab'}
           >
-            基本信息
+            个人基本信息
           </button>
           <button
             onClick={() => setActiveTab('education')}
@@ -480,13 +490,19 @@ function App() {
             onClick={() => setActiveTab('experience')}
             className={activeTab === 'experience' ? 'options-tab active' : 'options-tab'}
           >
-            实习与项目
+            实习项目
+          </button>
+          <button
+            onClick={() => setActiveTab('skills-awards')}
+            className={activeTab === 'skills-awards' ? 'options-tab active' : 'options-tab'}
+          >
+            技能荣誉
           </button>
           <button
             onClick={() => setActiveTab('custom')}
             className={activeTab === 'custom' ? 'options-tab active' : 'options-tab'}
           >
-            添加自定义信息
+            自定义信息
           </button>
           <button
             onClick={() => setActiveTab('resume')}
@@ -655,6 +671,17 @@ function App() {
               </div>
 
               <div style={styles.formGroup}>
+                <label style={styles.label}>兴趣爱好</label>
+                <textarea
+                  value={profile.personal.hobbies || ''}
+                  onChange={event => handlePersonalChange('hobbies', event.target.value)}
+                  style={{ ...styles.input, ...styles.autoGrowTextarea }}
+                  placeholder="请输入兴趣爱好"
+                  rows={1}
+                />
+              </div>
+
+              <div style={styles.formGroup}>
                 <label style={styles.label}>自我评价</label>
                 <textarea
                   value={profile.personal.selfEvaluation || ''}
@@ -692,14 +719,19 @@ function App() {
               <ExperienceSection
                 experience={profile.experience || []}
                 projects={profile.projects || []}
-                skills={profile.skills || []}
                 onChangeExperience={experience => setProfile({ ...profile, experience })}
                 onChangeProjects={projects => setProfile({ ...profile, projects })}
-                onChangeSkills={skills => setProfile({ ...profile, skills })}
               />
-              <AwardsSection
+            </div>
+          )}
+
+          {activeTab === 'skills-awards' && (
+            <div className="options-form">
+              <SkillsAwardsSection
+                skills={profile.skills || []}
                 awards={profile.awards || []}
-                onChange={awards => setProfile({ ...profile, awards })}
+                onChangeSkills={skills => setProfile({ ...profile, skills })}
+                onChangeAwards={awards => setProfile({ ...profile, awards })}
               />
             </div>
           )}
@@ -713,9 +745,6 @@ function App() {
                     添加网申中经常使用、但不属于现有分类的信息。
                   </p>
                 </div>
-                <button type="button" className="btn btn-secondary" onClick={addCustomInformation}>
-                  添加
-                </button>
               </div>
 
               {(profile.customInformation || []).length === 0 ? (
@@ -729,14 +758,32 @@ function App() {
                     <section className="custom-information-item" key={item.id}>
                       <div className="custom-information-item-header">
                         <h3>自定义信息 {index + 1}</h3>
-                        <button
-                          type="button"
-                          className="custom-information-remove"
-                          onClick={() => removeCustomInformation(item.id)}
-                          aria-label={`删除自定义信息 ${index + 1}`}
-                        >
-                          删除
-                        </button>
+                        <div>
+                          <button
+                            type="button"
+                            className="custom-information-remove"
+                            onClick={() => moveCustomInformation(index, -1)}
+                            disabled={index === 0}
+                          >
+                            上移
+                          </button>
+                          <button
+                            type="button"
+                            className="custom-information-remove"
+                            onClick={() => moveCustomInformation(index, 1)}
+                            disabled={index === (profile.customInformation || []).length - 1}
+                          >
+                            下移
+                          </button>
+                          <button
+                            type="button"
+                            className="custom-information-remove"
+                            onClick={() => removeCustomInformation(item.id)}
+                            aria-label={`删除自定义信息 ${index + 1}`}
+                          >
+                            删除
+                          </button>
+                        </div>
                       </div>
                       <div className="custom-information-fields">
                         <label>
@@ -766,6 +813,9 @@ function App() {
                   ))}
                 </div>
               )}
+              <button type="button" className="btn btn-secondary" onClick={addCustomInformation}>
+                添加
+              </button>
             </div>
           )}
 

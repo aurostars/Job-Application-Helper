@@ -36,8 +36,17 @@ const legacyUserProfile = {
       birthDate: '2000-01',
       phone: '13800000000',
       email: 'test@example.com',
+      hobbies: '摄影、徒步',
     },
-    education: [],
+    education: [{
+      id: 'edu-1',
+      school: '某大学',
+      major: '计算机',
+      degree: '本科',
+      startDate: '',
+      endDate: '',
+      majorCourses: '数据结构、操作系统',
+    }],
     experience: [],
     projects: [],
     awards: [],
@@ -109,6 +118,9 @@ test('合法 V1 文档完整保留简历和 API Key', () => {
   assert.equal(result.document.data.resumeProfileLibrary.profiles[0]?.profile.resume?.fileData, legacyUserProfile.resume?.fileData);
   assert.equal(result.document.data.llmConfig?.apiKey, 'sk-secret');
   assert.equal(result.document.data.applicationRecords?.[0]?.companyName, '字节跳动');
+  const profile = result.document.data.resumeProfileLibrary.profiles[0]?.profile;
+  assert.equal(profile?.personal.hobbies, '摄影、徒步');
+  assert.equal(profile?.education[0]?.majorCourses, '数据结构、操作系统');
 });
 
 test('合法 V1 文档完整保留自定义视觉开关', () => {

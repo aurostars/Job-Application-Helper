@@ -22,6 +22,7 @@ test('基本信息字段顺序与设计稿一致', () => {
       'hometown',
       'currentAddress',
       'idCard',
+      'hobbies',
       'selfEvaluation',
     ],
   );

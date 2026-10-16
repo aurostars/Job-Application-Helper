@@ -220,7 +220,7 @@ test('专业技能显示在奖项之前并过滤空项', () => {
   assert.match(html, /React/);
   assert.equal((html.match(/class="record-card skill-card"/g) || []).length, 2);
   assert.doesNotMatch(html, /技能 1|技能 2|技能 3/);
-  assert.match(html, /class="field-button skill-field-button"/);
+  assert.match(html, /class="field-row skill-field-row"/);
   assert.ok(html.indexOf('项目经历') < html.indexOf('专业技能'));
   assert.ok(html.indexOf('专业技能') < html.indexOf('奖项 / 荣誉'));
   assert.doesNotMatch(html, />\s+<\/span>/);
@@ -252,7 +252,7 @@ test('专业技能按钮使用全宽文本列而不是通用字段的标签列',
 
   assert.match(
     css,
-    /\.skill-field-button\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s,
+    /\.skill-field-row \.field-button\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s,
   );
 });
 
@@ -265,4 +265,47 @@ test('没有有效专业技能时不显示专业技能分区', () => {
     })
   );
   assert.doesNotMatch(html, /专业技能/);
+});
+
+
+test('展示新增字段并为每个非空字段提供独立复制按钮', () => {
+  const html = renderToStaticMarkup(
+    React.createElement(ProfileSections, {
+      profile: {
+        ...profile,
+        personal: { ...profile.personal, hobbies: '摄影、徒步' },
+        education: [{
+          id: 'edu-copy',
+          school: '浙江大学',
+          college: '',
+          educationType: '',
+          major: '',
+          degree: '',
+          startDate: '',
+          endDate: '',
+          gpa: '',
+          ranking: '',
+          majorCourses: '数据结构、操作系统',
+        }],
+        skills: ['TypeScript'],
+      },
+      workingKey: null,
+      onFieldClick: () => {},
+    }),
+  );
+
+  assert.match(html, /兴趣爱好/);
+  assert.match(html, /摄影、徒步/);
+  assert.match(html, /主要课程/);
+  assert.match(html, /数据结构、操作系统/);
+  const expectedLabelledFields = [
+    '姓名', '性别', '出生日期', '手机号', '邮箱', '兴趣爱好', '自我评价', '学校', '主要课程',
+  ];
+  for (const label of expectedLabelledFields) {
+    assert.match(html, new RegExp(`aria-label="复制${label}内容"`));
+  }
+  assert.equal((html.match(/aria-label="复制字段内容"/g) || []).length, 1);
+  assert.match(html, /TypeScript/);
+  const expectedCopyButtonCount = 10;
+  assert.equal((html.match(/class="field-copy-button"/g) || []).length, expectedCopyButtonCount);
 });

@@ -51,6 +51,39 @@ button { font: inherit; }
   object-fit: contain;
 }
 
+.popup-sync-control {
+  position: relative;
+  align-self: flex-start;
+  margin-left: auto;
+  text-align: right;
+}
+
+.popup-sync-button {
+  min-width: 62px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-primary-border);
+  border-radius: 9px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.popup-sync-button:hover:not(:disabled) { border-color: var(--color-primary); }
+.popup-sync-button:disabled { cursor: not-allowed; opacity: .7; }
+
+.popup-sync-error {
+  display: block;
+  position: absolute;
+  top: 36px;
+  right: 0;
+  width: max-content;
+  color: #b42318;
+  font-size: 11px;
+}
+
 .popup-header h1 {
   margin: 0;
   font-size: 17px;
@@ -167,6 +200,7 @@ button { font: inherit; }
 
 .button:focus-visible,
 .header-action-button:focus-visible,
+.popup-sync-button:focus-visible,
 .resume-profile-selector select:focus-visible {
   outline: 3px solid #0b3ea8;
   outline-offset: 2px;
@@ -347,6 +381,7 @@ button { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .button,
   .header-action-button,
+  .popup-sync-button,
   .resume-profile-selector select {
     transition: none;
   }
