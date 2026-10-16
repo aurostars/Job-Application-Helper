@@ -11,6 +11,27 @@ function installClipboard(writeText: (value: string) => Promise<void>): void {
   });
 }
 
+function copyIcon(renderer: TestRenderer.ReactTestRenderer) {
+  return renderer.root.findByProps({ className: 'field-copy-icon' });
+}
+
+test('默认使用复制图标并保留可访问名称和提示', async () => {
+  installClipboard(async () => {});
+  let renderer!: TestRenderer.ReactTestRenderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      <FieldRow fieldKey="phone" label="手机号" value="13800138000" onFieldClick={() => {}} />,
+    );
+  });
+  const button = renderer.root.findByProps({ 'aria-label': '复制手机号内容' });
+  assert.equal(button.props.title, '复制');
+  const icon = copyIcon(renderer);
+  assert.equal(icon.props['aria-hidden'], true);
+  assert.equal(icon.props.width, 16);
+  assert.equal(icon.props.height, 16);
+  await act(async () => renderer.unmount());
+});
+
 test('复制按钮只复制完整字段内容且阻止冒泡', async () => {
   let filled = 0;
   let stopped = 0;
@@ -53,10 +74,10 @@ test('剪贴板写入失败时不显示成功状态', async () => {
 
   const copy = renderer.root.findByProps({ 'aria-label': '复制邮箱内容' });
   await act(async () => copy.props.onClick({ stopPropagation: () => {} }));
-  assert.equal(copy.children.join(''), '复制');
+  copyIcon(renderer);
 });
 
-test('复制成功约 1000ms 后恢复复制文本', async () => {
+test('复制成功约 1000ms 后恢复复制图标', async () => {
   installClipboard(async () => {});
   let renderer!: TestRenderer.ReactTestRenderer;
   await act(async () => {
@@ -68,8 +89,9 @@ test('复制成功约 1000ms 后恢复复制文本', async () => {
   const copy = renderer.root.findByProps({ 'aria-label': '复制手机号内容' });
   await act(async () => copy.props.onClick({ stopPropagation: () => {} }));
   assert.equal(copy.children.join(''), '✓');
+  assert.equal(renderer.root.findAllByProps({ className: 'field-copy-icon' }).length, 0);
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 1050)); });
-  assert.equal(copy.children.join(''), '复制');
+  copyIcon(renderer);
 });
 
 test('卸载时清理复制状态计时器', async () => {
@@ -212,12 +234,12 @@ test('旧复制成功晚于新复制失败时不覆盖最新失败状态', async
     pending[1].reject();
     await newRequest;
   });
-  assert.equal(copy.children.join(''), '复制');
+  copyIcon(renderer);
 
   await act(async () => {
     pending[0].resolve();
     await oldRequest;
   });
-  assert.equal(copy.children.join(''), '复制');
+  copyIcon(renderer);
   await act(async () => renderer.unmount());
 });
