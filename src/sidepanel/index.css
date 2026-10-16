@@ -363,14 +363,22 @@ textarea {
 }
 
 .field-copy-button {
+  display: grid;
+  place-items: center;
   align-self: stretch;
-  width: 44px;
+  width: 34px;
   padding: 0;
   border: 0;
   background: var(--color-panel);
   color: var(--color-muted);
   font-size: 11px;
   cursor: pointer;
+}
+
+.field-copy-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 
 .field-copy-button:hover {

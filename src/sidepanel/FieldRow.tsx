@@ -12,6 +12,22 @@ export type FieldRowProps = {
   onFieldClick: (key: string, value: string) => void;
 };
 
+function CopyIcon(): React.JSX.Element {
+  return (
+    <svg
+      className="field-copy-icon"
+      width={16}
+      height={16}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden={true}
+    >
+      <rect x="5.25" y="5.25" width="8" height="8" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10.75 3.75V3A1.25 1.25 0 0 0 9.5 1.75H3A1.25 1.25 0 0 0 1.75 3v6.5A1.25 1.25 0 0 0 3 10.75h.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function FieldRow({
   fieldKey,
   label,
@@ -78,9 +94,10 @@ export function FieldRow({
           type="button"
           className="field-copy-button"
           aria-label={`复制${label || '字段'}内容`}
+          title="复制"
           onClick={copy}
         >
-          {copied ? '✓' : '复制'}
+          {copied ? '✓' : <CopyIcon />}
         </button>
       )}
     </div>
